@@ -35,6 +35,7 @@ module Overeasy.EGraph
   , egAddAnalysis
   , egMerge
   , egMergeMany
+  , egUnionGraphs
   , egNeedsRebuild
   , egRebuild
   , egCanCompact
@@ -642,8 +643,8 @@ type M f d = StateT (EGraph d f) (State (IntLikeMap EClassId EClassId))
 
 -- | Merges two EGraphs. The resulting EGraph contains all nodes from both graphs.
 -- When two nodes are in one equivalence class in either graph, they are merged in the resulting graph.
-mergeEGraph :: forall f d q. (Hashable (f EClassId), EAnalysis d f q, Traversable f) => q -> EGraph d f -> EGraph d f -> (EGraph d f, IntLikeMap EClassId EClassId)
-mergeEGraph q input1 input2 = runState (execStateT (processLoop (S.toList queue0) pending0) eg1) mempty
+egUnionGraphs :: forall f d q. (Hashable (f EClassId), EAnalysis d f q, Traversable f) => q -> EGraph d f -> EGraph d f -> (EGraph d f, IntLikeMap EClassId EClassId)
+egUnionGraphs q input1 input2 = runState (execStateT (processLoop (S.toList queue0) pending0) eg1) mempty
   where
     -- Uses the larger graph as base, insert the others node into it
     (eg1, eg2)
