@@ -36,6 +36,7 @@ module Overeasy.EGraph
   , egMerge
   , egMergeMany
   , egUnionGraphs
+  , egIntersectGraphs
   , egNeedsRebuild
   , egRebuild
   , egCanCompact
@@ -43,9 +44,9 @@ module Overeasy.EGraph
   ) where
 
 import Control.DeepSeq (NFData)
-import Control.Monad (unless, forM_)
-import Control.Monad.State.Strict (State, gets, modify', state, runState, StateT(..), execStateT)
-import Control.Monad.Writer (Writer, runWriter, tell)
+import Control.Monad (unless, forM_, when)
+import Control.Monad.State.Strict (State, gets, modify', state, runState, StateT(..), execStateT, evalState)
+import Control.Monad.Writer (Writer, runWriter, tell, WriterT (runWriterT), execWriterT)
 import Data.Foldable (foldl', toList)
 import Data.Functor.Foldable (project)
 import Data.Hashable (Hashable)
@@ -62,7 +63,7 @@ import qualified IntLike.MultiMap as ILMM
 import IntLike.Set (IntLikeSet)
 import qualified IntLike.Set as ILS
 import Overeasy.Assoc (Assoc, AssocInsertRes (..), assocCanCompact, assocCompactInc, assocInsertInc, assocLookupByValue,
-                       assocNew, assocPartialLookupByKey, assocToList, assocSize)
+                       assocNew, assocPartialLookupByKey, assocToList, assocSize, assocPartialLookupByValue)
 import Overeasy.Classes (Changed (..))
 import Overeasy.EquivFind (EquivFind, EquivMergeSetsRes (..), efAddInc, efClosure, efCompactInc, efFindRoot,
                            efLookupLeaves, efLookupRoot, efMergeSetsInc, efNew, efRoots, efRootsSize)
@@ -76,6 +77,10 @@ import qualified Data.Set as S
 import Overeasy.Pending (Pending, pendingNew, pendingMarkKnown, pendingFinished)
 import Control.Monad.Trans (lift)
 import Data.Functor.Identity (runIdentity)
+import Data.Monoid (Any(..))
+import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as HM
+import Data.Maybe (fromJust)
 
 -- | An opaque class id
 newtype EClassId = EClassId { unEClassId :: Int }
@@ -639,7 +644,7 @@ egCompact = modify' egCompactInc
 
 
 
-type M f d = StateT (EGraph d f) (State (IntLikeMap EClassId EClassId))
+type MUnion f d = StateT (EGraph d f) (State (IntLikeMap EClassId EClassId))
 
 -- | Merges two EGraphs. The resulting EGraph contains all nodes from both graphs.
 -- When two nodes are in one equivalence class in either graph, they are merged in the resulting graph.
@@ -658,7 +663,7 @@ egUnionGraphs q input1 input2 = runState (execStateT (processLoop (S.toList queu
     lookupData2 n = eciData (ILM.partialLookup n (egClassMap eg2))
 
     -- | Do merging in reverse topo order, starting with constants.
-    processLoop :: [ENodeId] -> Pending EClassId ENodeId -> M f d ()
+    processLoop :: [ENodeId] -> Pending EClassId ENodeId -> MUnion f d ()
     processLoop [] pending
        | pendingFinished pending = pure ()
        | otherwise = error "Processing not finished"
@@ -668,7 +673,7 @@ egUnionGraphs q input1 input2 = runState (execStateT (processLoop (S.toList queu
            (pending', nodes2') =  pendingMarkKnown classes pending
        processLoop (S.toList nodes2') pending'
 
-    go :: ENodeId -> M f d ()
+    go :: ENodeId -> MUnion f d ()
     go n2 = do
         let term = assocPartialLookupByKey n2 (egNodeAssoc eg2)
         term1 <- traverse getMapping term
@@ -691,6 +696,83 @@ egUnionGraphs q input1 input2 = runState (execStateT (processLoop (S.toList queu
 -- Maybe only if at least one side is ground?
 generalizeS :: Applicative m => State s a -> StateT s m a
 generalizeS m = StateT $ pure . runIdentity . runStateT m
+
+
+type EClassLeft = EClassId
+type EClassRight = EClassId
+type EClassOut = EClassId
+type MIntersect f d = StateT (EGraph d f) (State (IntLikeMap EClassLeft (IntLikeSet EClassOut), IntLikeMap EClassOut EClassRight, HashMap (EClassLeft, EClassRight) EClassOut))
+
+-- | Feels very similar to NFA intersection, but I wrote this while very tired so I based it on https://github.com/remysucre/eggegg/blob/main/src/main.rs
+egIntersectGraphs  :: forall f d q. (Hashable (f EClassId), EAnalysis d f q, Traversable f) => q -> EGraph d f -> EGraph d f -> EGraph d f
+egIntersectGraphs q left0 right0 = evalState (execStateT goOuter  egNew) (ILM.empty, ILM.empty, HM.empty)
+   where
+    goOuter = do
+      ch <- execWriterT go
+      case ch of
+        ChangedYes -> goOuter
+        ChangedNo -> generalizeS egCompact
+
+    go :: WriterT Changed (MIntersect f d) ()
+    go = do
+       forM_ (assocToList (egNodeAssoc left0)) $ \(node1,term1) -> do
+          let class1 = lookupClass1 node1
+          termms <- resolveTerm term1
+          forM_ termms $ \termm -> do
+              mterm2 <- traverse lookupRight termm
+              case sequence mterm2 of
+                Nothing -> pure ()
+                Just term2 -> do
+                    let node2 = lookupNode2 term2
+                        class2 = lookupClass2 node2
+                    (isNew, midTriple) <- inEgg (egAddNodeSubId q termm)
+                    tell isNew
+                    let classMid = entClass midTriple
+                    insertMid class1 classMid
+                    setRight classMid class2
+                    tryInsertBack class1 class2 classMid
+
+    insertMid :: EClassLeft -> EClassOut -> WriterT Changed (MIntersect f d) ()
+    insertMid class1 classMid = do
+        lift $ lift $ modify' $ over1 $ flip ILM.alter class1 $ \case
+            Nothing -> Just (ILS.singleton classMid)
+            Just classes -> Just (ILS.insert classMid classes)
+    tryInsertBack :: EClassLeft -> EClassRight -> EClassOut -> WriterT Changed (MIntersect f d) ()
+    tryInsertBack class1 class2 classMid = do
+        prev <- lift $ lift $ gets $ \(_,_,m) -> HM.lookup (class1,class2) m
+        case prev of
+          Just out -> do
+            change <- fmap fromJust (inEgg (egMerge classMid out))
+            _ <- inEgg (egRebuild q)
+            tell change
+          Nothing -> lift $ lift $ modify' $ over3 $ HM.insert (class1, class2) classMid
+    setRight :: EClassOut -> EClassRight -> WriterT Changed (MIntersect f d) ()
+    setRight classMid class2 = lift $ lift $ modify' $ over2 $ ILM.insert classMid class2
+    over1 f (a,b,c) = (f a, b,c)
+    over2 f (a,b,c) = (a,f b,c)
+    over3 f (a,b,c) = (a,b,f c)
+    inEgg = lift . generalizeS
+    lookupMid :: EClassLeft -> WriterT Changed (MIntersect f d) [EClassOut]
+    lookupMid cl = lift $ lift $ gets (ILS.toList . ILM.findWithDefault ILS.empty cl . fst3)
+    resolveTerm :: f EClassLeft -> WriterT Changed (MIntersect f d) [f EClassOut]
+    resolveTerm term = do
+        classes' <- traverse lookupMid term
+        pure (sequence classes')
+    lookupRight :: EClassOut -> WriterT Changed (MIntersect f d) (Maybe EClassRight)
+    lookupRight cl = lift $ lift $ gets (ILM.lookup cl . snd3)
+    snd3 (_,b,_) = b
+    fst3 (a,_,_) = a
+
+    lookupNode2 :: f EClassRight -> ENodeId
+    lookupNode2 cl = assocPartialLookupByValue cl (egNodeAssoc right0)
+
+    lookupClass2 :: ENodeId -> EClassRight
+    lookupClass2 cl = ILM.findWithDefault (error "lookupNode2") cl (egHashCons right0)
+
+    lookupClass1 :: ENodeId -> EClassLeft
+    lookupClass1 cl = ILM.findWithDefault (error "lookupNode1") cl (egHashCons left0)
+
+
 
 
 
