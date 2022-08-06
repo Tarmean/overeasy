@@ -10,6 +10,7 @@ module Overeasy.EGraph
   , EAnalysis (..)
   , EAnalysisOff (..)
   , EAnalysisAlgebra (..)
+  , EAnalysisFixpoint (..)
   , EClassInfo (..)
   , EGraph
   , WorkItem
@@ -31,6 +32,7 @@ module Overeasy.EGraph
   , egClasses
   , egCanonicalize
   , egAddTerm
+  , egAddAnalysis
   , egMerge
   , egMergeMany
   , egNeedsRebuild
@@ -99,6 +101,10 @@ class EAnalysis d f q | q -> d f where
    
   eaJoin2 :: q -> d -> d -> (d, EAnalysisChange)
   eaJoin2 q l r = (eaJoin q l [r], eaWhat q l r)
+
+  eHook :: q -> EClassId -> State (EGraph d f) ()
+  eHook _ _ = pure ()
+
 
 rightRequiresUpdate :: EAnalysis d f q => q -> d -> d -> Bool
 rightRequiresUpdate q l r = case eaWhat q l r of
@@ -257,6 +263,7 @@ egAddNodeSub q fcd = do
       let d = eciData eci
       pure (ChangedNo, ENodeTriple n x d)
     Nothing -> state $ \eg ->
+      -- FIXME: should this run eHook?
       -- node does not exist; get new node and class ids
       let (n, nodeSource') = sourceAddInc (egNodeSource eg)
           (x, classSource') = sourceAddInc (egClassSource eg)
@@ -272,9 +279,6 @@ egAddNodeSub q fcd = do
           classMap' = ILM.insert x eci (egClassMap eg)
           eg' = eg { egNodeSource = nodeSource', egClassSource = classSource', egEquivFind = ef', egNodeAssoc = assoc', egHashCons = hc', egClassMap = classMap' }
       in ((ChangedYes, ENodeTriple n x d), eg')
-
-postAnalysisHook :: EClassId -> m ()
-postAnalysisHook = undefined
 
 egAddNodeSubId :: (EAnalysis d f q, Functor f, Hashable (f EClassId)) => q -> f EClassId -> State (EGraph d f) (Changed, ENodeTriple d)
 egAddNodeSubId q fc = do
@@ -549,6 +553,7 @@ egReanalyzeRound q wl = do
     forM_ (ILM.toList classReana) $ \(clazz, reanaTerms) -> do
         o <- mapM (egAnalyzeTerm q) (ILS.toList reanaTerms)
         egAddAnalysis q clazz o
+        eHook q clazz
 egAddAnalysis :: EAnalysis d f q => q -> EClassId -> [d] -> State (EGraph d f) ()
 egAddAnalysis q anaClass newData = do
     classMap <- gets egClassMap
