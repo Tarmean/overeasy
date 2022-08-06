@@ -7,14 +7,14 @@ packages:
 - completed:
     name: int-like
     version: 0.1.0
-    git: git@github.com:ejconlon/int-like.git
+    git: git@github.com:Tarmean/int-like.git
     pantry-tree:
       size: 1134
-      sha256: 505e65f19ced2a1aff66bc880fa3f194f8d44305fae730ca08a19ddb64776328
-    commit: e814624a26d71f02582e5cb9ea0955aa721d509e
+      sha256: b971e0e6437ab8c9076ff2419b3eb1a84570d7dcbfd08046a82623f4d533f25b
+    commit: 69165b19c01b64957e36cfcb51e09f4ec99b6e89
   original:
-    git: git@github.com:ejconlon/int-like.git
-    commit: e814624a26d71f02582e5cb9ea0955aa721d509e
+    git: git@github.com:Tarmean/int-like.git
+    commit: 69165b19c01b64957e36cfcb51e09f4ec99b6e89
 - completed:
     name: prop-unit
     version: 0.1.0
@@ -28,7 +28,8 @@ packages:
     commit: 167f919ee66dc2f6f17b9ad952be3921779789ea
 snapshots:
 - completed:
-    size: 586110
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/18/21.yaml
-    sha256: ce4fb8d44f3c6c6032060a02e0ebb1bd29937c9a70101c1517b92a87d9515160
-  original: lts-18.21
+    size: 554661
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/nightly/2022/4/28.yaml
+    sha256: eb778a9c971802e22068265fb7b14d357c3eb7d76229402b9444a3db1a2bc153
+  original:
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/nightly/2022/4/28.yaml

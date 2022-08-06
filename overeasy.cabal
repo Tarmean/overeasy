@@ -30,6 +30,7 @@ library
       Overeasy.EquivFind
       Overeasy.Matching
       Overeasy.Orphans
+      Overeasy.Pending
       Overeasy.Recursion
       Overeasy.Source
       Overeasy.StateUtil

@@ -1,4 +1,7 @@
-resolver: lts-18.21
+allow-newer: true
+resolver: 
+  url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/nightly/2022/4/28.yaml
+
 
 ghc-options:
   "$everything": -haddock
@@ -7,7 +10,7 @@ packages:
 - .
 
 extra-deps:
-- git: git@github.com:ejconlon/int-like.git
-  commit: e814624a26d71f02582e5cb9ea0955aa721d509e
+- git: git@github.com:Tarmean/int-like.git
+  commit: 69165b19c01b64957e36cfcb51e09f4ec99b6e89
 - git: git@github.com:ejconlon/prop-unit.git
   commit: 167f919ee66dc2f6f17b9ad952be3921779789ea

@@ -28,3 +28,6 @@ deriving stock instance Show a => Show (ArithF a)
 deriving stock instance Generic (ArithF a)
 deriving anyclass instance Hashable a => Hashable (ArithF a)
 deriving anyclass instance NFData a => NFData (ArithF a)
+
+
+
