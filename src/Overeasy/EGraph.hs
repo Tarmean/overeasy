@@ -418,7 +418,7 @@ egTakeWorklist = state $ \eg ->
 egTakeAnaWorklist :: State (EGraph d f) AnalysisWorklist
 egTakeAnaWorklist = state $ \eg ->
   let wl = egAnaWorklist eg
-      eg' = if ILS.null wl then eg else eg { egWorkList = Empty }
+      eg' = if ILS.null wl then eg else eg { egAnaWorklist = ILS.empty }
   in (wl, eg')
 
 
