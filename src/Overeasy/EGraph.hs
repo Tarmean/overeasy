@@ -593,8 +593,8 @@ egReanalyzeRound :: (Functor f, EAnalysis d f q) => q -> AnalysisWorklist -> Sta
 egReanalyzeRound q wl = do
     origHc <- gets egHashCons
     let classReana = ILM.fromListWith ILS.union [ (ILM.partialLookup c origHc, ILS.singleton c) | c <- ILS.toList wl ]
+    traceM ("Reanalyze round, : " ++ show wl)
     forM_ (ILM.toList classReana) $ \(clazz, reanaTerms) -> do
-        traceM ("Reanalyze round, class: " ++ show clazz ++ ", reana terms: " ++ show reanaTerms)
         o <- mapM (egAnalyzeTerm q) (ILS.toList reanaTerms)
         egAddAnalysis q clazz o
         eHook q clazz
@@ -612,8 +612,8 @@ egAddAnalysis q anaClass newData = do
     modify' (\eg -> eg { egClassMap = ILM.insert anaClass classData' (egClassMap eg), egAnaWorklist = addNewDirty (egAnaWorklist eg) })
 
 -- | Rebuilds the 'EGraph' after merging to allow adding more terms. (Always safe to call.)
-egRebuild :: (EAnalysis d f q, Traversable f, Hashable (f EClassId)) => q -> State (EGraph d f) (IntLikeMultiMap EClassId EClassId)
-egRebuild q = goRec where
+egRebuild1 :: (EAnalysis d f q, Traversable f, Hashable (f EClassId)) => q -> State (EGraph d f) (IntLikeMultiMap EClassId EClassId)
+egRebuild1 q = goRec where
   goRec = do
     -- Note the existing hashcons
     origHc <- gets egHashCons
@@ -632,6 +632,17 @@ egRebuild q = goRec where
         (newTc, newWl, newParents) <- egRebuildNodeRound origHc wl parents
         let mergedTc = ILS.union newTc tc
         goNodeRounds origHc mergedTc newWl newParents
+
+-- | EAnalysis might dirty the graph, just throw a loop at it for now
+egRebuild :: (EAnalysis d f q, Traversable f, Hashable (f EClassId)) => q -> State (EGraph d f) (IntLikeMultiMap EClassId EClassId)
+egRebuild q = loop mempty
+  where
+    loop acc = do
+       o <- egRebuild1 q
+       keepGoing <- gets egNeedsRebuild
+       if keepGoing
+       then loop (ILM.union o acc)
+       else pure (ILM.union o acc)
 
 
 egCanCompact :: EGraph d f -> Bool
