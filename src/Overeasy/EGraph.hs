@@ -50,7 +50,7 @@ module Overeasy.EGraph
   ) where
 
 import Control.DeepSeq (NFData)
-import Control.Monad (unless, forM_, MonadPlus(mzero))
+import Control.Monad (unless, forM_, MonadPlus(mzero), when)
 import Control.Monad.State.Strict (gets, modify', state, StateT(..), execStateT, evalStateT)
 import Control.Monad.Writer (Writer, runWriter, tell, WriterT, execWriterT)
 import Data.Foldable (foldl', toList)
@@ -530,7 +530,7 @@ egRebuildNodeRound origHc wl parents = do
   let finalParents = ILS.difference candParents touchedClasses
   pure (touchedClasses, parentWl, finalParents)
 
-egRebuildClassSingle :: EAnalysisMerge d => IntLikeMap EClassId (EClassInfo d) -> EClassId -> IntLikeSet EClassId -> Writer (IntLikeSet ENodeId) (EClassInfo d)
+egRebuildClassSingle :: EAnalysisMerge d => IntLikeMap EClassId (EClassInfo d) -> EClassId -> IntLikeSet EClassId -> Writer (IntLikeSet ENodeId, IntLikeSet EClassId) (EClassInfo d)
 egRebuildClassSingle baseCm newClass oldClasses =
   let EClassInfo rootData rootNodes rootParents = ILM.partialLookup newClass baseCm
 
@@ -547,8 +547,26 @@ egRebuildClassSingle baseCm newClass oldClasses =
       candParents = foldl' (\s c -> ILS.union s (lookupParents c)) rootParents (ILS.toList oldClasses)
       finalParents = ILS.difference candParents finalNodes
       finalInfo = EClassInfo finalData finalNodes finalParents
-      -- finalCm = ILM.insert newClass finalInfo baseCm
-  in tell nodesToReanalyze *> pure finalInfo
+      shouldRerunHook = if not (ILS.null classToReanalyze) then ILS.singleton newClass else ILS.empty
+      -- FIXME FIXME FIXME FIXME
+      -- FIXME FIXME FIXME FIXME
+      -- FIXME FIXME FIXME FIXME
+      -- FIXME FIXME FIXME FIXME
+      -- FIXME FIXME FIXME FIXME
+      -- FIXME FIXME FIXME FIXME
+      -- FIXME FIXME FIXME FIXME
+      -- FIXME FIXME FIXME FIXME
+      -- FIXME FIXME FIXME FIXME
+      -- FIXME FIXME FIXME FIXME
+      -- FIXME FIXME FIXME FIXME
+      -- FIXME FIXME FIXME FIXME
+      -- FIXME FIXME FIXME FIXME
+      -- FIXME FIXME FIXME FIXME
+      -- FIXME FIXME FIXME FIXME
+      -- FIXME FIXME FIXME FIXME
+      -- FIXME FIXME FIXME FIXME
+      -- eHook should be called here iff analysis outdates old one
+  in tell (nodesToReanalyze, shouldRerunHook) *> pure finalInfo
 
 -- private
 -- Merge analyses for all classes together. When an old analyses
@@ -561,19 +579,20 @@ egJoinAnalysis parent oldData = (finalData, ILS.fromList dirtyClasses) where
 -- private
 -- Rebuilds the classmap: merges old class infos into root class infos
 -- Returns list of modified root classes
-egRebuildClassMap :: (MonadState (EGraph d f) m, EAnalysis d f) => IntLikeSet EClassId -> m (IntLikeMultiMap EClassId EClassId)
+egRebuildClassMap :: (MonadState (EGraph d f) m, EAnalysis d f) => IntLikeSet EClassId -> m (IntLikeMultiMap EClassId EClassId, IntLikeSet EClassId)
 egRebuildClassMap touchedClasses = state $ \eg ->
   let ef = egEquivFind eg
       dc = egDeadClasses eg
       roots = ILS.map (`efLookupRoot` ef) touchedClasses
       rootMap = ILM.fromList (fmap (\r -> (r, ILS.difference (efLookupLeaves r ef) dc)) (ILS.toList roots))
 
-      (newClassMap, nodesToReanalyze) = runWriter (ILM.traverseWithKey (egRebuildClassSingle (egClassMap eg)) rootMap)
+      -- FIXME! use rerunHookFor
+      (newClassMap, (nodesToReanalyze, rerunHookFor)) = runWriter (ILM.traverseWithKey (egRebuildClassSingle (egClassMap eg)) rootMap)
 
       egAnaWorklist' = ILS.union (egAnaWorklist eg) nodesToReanalyze
       cm' = ILM.union newClassMap (egClassMap eg)
       dc' = foldl' ILS.union (egDeadClasses eg) (ILM.elems rootMap)
-  in (rootMap, eg { egClassMap = cm', egDeadClasses = dc', egAnaWorklist = egAnaWorklist' })
+  in ((rootMap, rerunHookFor), eg { egClassMap = cm', egDeadClasses = dc', egAnaWorklist = egAnaWorklist' })
 
 egAnalyzeTerm :: forall d f m. (MonadState (EGraph d f) m, Functor f, EAnalysis d f) => ENodeId -> m d
 egAnalyzeTerm k = do
@@ -601,7 +620,7 @@ egReanalyzeRound wl = do
         o <- mapM (egAnalyzeTerm) (ILS.toList reanaTerms)
         egAddAnalysis clazz o
         eHook clazz
-egAddAnalysis :: (MonadState (EGraph d f) m, EAnalysis d f) => EClassId -> [d] -> m ()
+egAddAnalysis :: (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f) => EClassId -> [d] -> m ()
 egAddAnalysis anaClass newData = do
     classMap <- gets egClassMap
     let 
@@ -609,10 +628,12 @@ egAddAnalysis anaClass newData = do
       oldData = eciData classData
 
       joined = eaJoin oldData newData
-      addNewDirty wl = if rightRequiresUpdate joined oldData then ILS.union (eciParents classData) wl else wl
+      isDirty = rightRequiresUpdate joined oldData
+      addNewDirty wl = if isDirty then ILS.union (eciParents classData) wl else wl
 
       classData' = classData { eciData = joined }
     modify' (\eg -> eg { egClassMap = ILM.insert anaClass classData' (egClassMap eg), egAnaWorklist = addNewDirty (egAnaWorklist eg) })
+    when isDirty (eHook anaClass)
 
 -- | Rebuilds the 'EGraph' after merging to allow adding more terms. (Always safe to call.)
 egRebuild1 :: (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f, Traversable f, Hashable (f EClassId)) => m (IntLikeMultiMap EClassId EClassId)
@@ -625,7 +646,8 @@ egRebuild1 = goRec where
     -- Merge and induce equivalences
     tc <- goNodeRounds origHc ILS.empty wl ILS.empty
     -- Now everything is merged so we only have to rewrite the changed parts of the classmap
-    out <- egRebuildClassMap tc
+    (out, rerunHooks) <- egRebuildClassMap tc
+    mapM_ eHook (ILS.toList rerunHooks)
     egReanalyzeRounds
     pure out
   goNodeRounds !origHc !tc !wl !parents =
