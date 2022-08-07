@@ -9,8 +9,9 @@ module Overeasy.EGraph
   , ENodeId (..)
   , EAnalysis (..)
   , EAnalysisOff (..)
-  , EAnalysisAlgebra (..)
-  , EAnalysisFixpoint (..)
+  -- , EAnalysisAlgebra (..)
+  -- , EAnalysisFixpoint (..)
+  , EAnalysisMerge(..)
   , EAnalysisHook (..)
   , EClassInfo (..)
   , EAnalysisChange(..)
@@ -53,8 +54,6 @@ import Data.Foldable (foldl', toList)
 import Data.Functor.Foldable (project)
 import Data.Hashable (Hashable)
 import Data.Kind (Type)
-import Data.List.NonEmpty (NonEmpty (..))
-import Data.Semigroup (sconcat)
 import Data.Sequence (Seq (..))
 import qualified Data.Sequence as Seq
 import GHC.Generics (Generic)
@@ -94,53 +93,54 @@ newtype ENodeId = ENodeId { unENodeId :: Int }
   deriving newtype (Eq, Ord, Enum, Hashable, NFData)
 
 -- | The definition of an 'EGraph' analysis.
--- Should satisfy `eaJoin q d [] == d`
+-- Should satisfy `eaJoin d [] == d`
 -- TODO Allow these to signal additional information
 -- so we can catch weird merges and so on
-class EAnalysis d f q | q -> d f where
-  eaMake :: q -> f d -> d
-  eaJoin :: q -> d -> [d] -> d
-  eaWhat :: q -> d -> d -> EAnalysisChange
-  default eaWhat :: Ord d => q -> d -> d -> EAnalysisChange
-  eaWhat _ l r 
+class EAnalysisMerge d => EAnalysis d f where
+  eaMake :: f d -> d
+class EAnalysisMerge d where
+  eaJoin :: d -> [d] -> d
+  eaWhat :: d -> d -> EAnalysisChange
+  default eaWhat :: Ord d => d -> d -> EAnalysisChange
+  eaWhat l r 
     | l == r = UpdateNone
     | otherwise = UpdateBoth
    
-  eaJoin2 :: q -> d -> d -> (d, EAnalysisChange)
-  eaJoin2 q l r = (eaJoin q l [r], eaWhat q l r)
+  eaJoin2 :: d -> d -> (d, EAnalysisChange)
+  eaJoin2 l r = (eaJoin l [r], eaWhat l r)
 
-  eHook :: EAnalysisHook m d f q => q -> EClassId -> m ()
-  eHook _ _ = pure ()
+  eHook :: EAnalysisHook m d f => EClassId -> m ()
+  eHook _ = pure ()
 
-class (Monad m) => EAnalysisHook m d f q|  m -> d f where
-    eaClassData :: q -> EClassId -> m d
-    eaAddTerm :: (EAnalysis d f q, Functor f, Hashable (f EClassId)) => q -> f EClassId -> m EClassId
-    eaRefineAnalysis :: (EAnalysis d f q)  => q -> EClassId -> d -> m ()
-    eaHalt :: q -> m ()
-    eaMerge :: q -> EClassId -> EClassId -> m ()
-instance EAnalysisHook (State (EGraph d f)) d f q where
-    eaClassData _ cid = do
+class (Monad m) => EAnalysisHook m d f |  m -> d f where
+    eaClassData ::  EClassId -> m d
+    eaAddTerm :: (EAnalysis d f, Functor f, Hashable (f EClassId)) => f EClassId -> m EClassId
+    eaRefineAnalysis :: (EAnalysis d f)  => EClassId -> d -> m ()
+    eaHalt :: m ()
+    eaMerge :: EClassId -> EClassId -> m ()
+instance EAnalysisHook (State (EGraph d f)) d f where
+    eaClassData cid = do
       cmap <- gets egClassMap
       pure (eciData $ ILM.partialLookup cid cmap)
-    eaAddTerm q tid = do
-       (_, trip) <- egAddNodeSubId q tid
+    eaAddTerm tid = do
+       (_, trip) <- egAddNodeSubId tid
        pure (entClass trip)
-    eaMerge _ cid cid2 = do
+    eaMerge cid cid2 = do
        m <- egMerge cid cid2
        case m of
          Just _ -> pure ()
          Nothing -> error "eaMerge: merge failed"
-    eaRefineAnalysis q tid d = do
-       egAddAnalysis q tid [d]
+    eaRefineAnalysis tid d = do
+       egAddAnalysis tid [d]
     -- FIXME: we should be able to signify failure when an analysis deduces contradiction
     -- this means everything in this module needs to run in an ExceptT monad or whatever
-    eaHalt _ = error "EAnalysis deduced conflict, but this is not implemented yet"
+    eaHalt = error "EAnalysis deduced conflict, but this is not implemented yet"
 
  
 
 
-rightRequiresUpdate :: EAnalysis d f q => q -> d -> d -> Bool
-rightRequiresUpdate q l r = case eaWhat q l r of
+rightRequiresUpdate :: EAnalysisMerge d => d -> d -> Bool
+rightRequiresUpdate l r = case eaWhat l r of
     UpdateRight -> True
     UpdateBoth -> True
     _ -> False
@@ -156,33 +156,34 @@ data EAnalysisChange
 data EAnalysisOff (f :: Type -> Type) = EAnalysisOff
   deriving (Eq, Ord, Show)
 
-instance EAnalysis () f (EAnalysisOff f) where
-  eaMake _ _ = ()
-  eaJoin _ _ _ = ()
+instance EAnalysis () f where
+  eaMake _ = ()
+instance EAnalysisMerge () where
+  eaJoin _ _ = ()
 
-newtype EAnalysisAlgebra d f = EAnalysisAlgebra
-  { unEAnalysisAlgebra :: f d -> d
-  }
-
--- TODO should also offer a monoid version that ignores the current data and recalculates
--- The monoid version is important for things like depth
-instance (Semigroup d) => EAnalysis d f (EAnalysisAlgebra d f) where
-  eaMake (EAnalysisAlgebra g) fd = g fd
-  eaJoin _ d ds = sconcat (d :| ds)
-  eaWhat _ _ _ = UpdateNone
-
-newtype EAnalysisFixpoint d f = EAnalysisFixpoint
-  { unEAnalysisFixpoint :: f d -> d
-  }
+-- newtype EAnalysisAlgebra d f = EAnalysisAlgebra
+--   { unEAnalysisAlgebra :: f d -> d
+--   }
 
 -- TODO should also offer a monoid version that ignores the current data and recalculates
 -- The monoid version is important for things like depth
-instance (Eq d, Semigroup d) => EAnalysis d f (EAnalysisFixpoint d f) where
-  eaMake (EAnalysisFixpoint g) fd = g fd
-  eaJoin _ d ds = sconcat (d :| ds)
-  eaWhat _ l r
-    | l == r = UpdateNone
-    | otherwise = UpdateBoth
+-- instance (Semigroup d) => EAnalysis d f (EAnalysisAlgebra d f) where
+--   eaMake (EAnalysisAlgebra g) fd = g fd
+--   eaJoin _ d ds = sconcat (d :| ds)
+--   eaWhat _ _ _ = UpdateNone
+
+-- newtype EAnalysisFixpoint d f = EAnalysisFixpoint
+--   { unEAnalysisFixpoint :: f d -> d
+--   }
+
+-- TODO should also offer a monoid version that ignores the current data and recalculates
+-- The monoid version is important for things like depth
+-- instance (Eq d, Semigroup d) => EAnalysis d f (EAnalysisFixpoint d f) where
+--   eaMake (EAnalysisFixpoint g) fd = g fd
+--   eaJoin _ d ds = sconcat (d :| ds)
+--   eaWhat _ l r
+--     | l == r = UpdateNone
+--     | otherwise = UpdateBoth
 
 data ENodeTriple d = ENodeTriple
   { entNode :: !ENodeId
@@ -283,8 +284,8 @@ instance Monoid (AddNodeRes d) where
   mappend = (<>)
 
 -- private
-egAddNodeSub :: (EAnalysis d f q, Functor f, Hashable (f EClassId)) =>q -> f (ENodeTriple d) -> State (EGraph d f) (Changed, ENodeTriple d)
-egAddNodeSub q fcd = do
+egAddNodeSub :: (EAnalysis d f, Functor f, Hashable (f EClassId)) => f (ENodeTriple d) -> State (EGraph d f) (Changed, ENodeTriple d)
+egAddNodeSub fcd = do
   let fc = fmap entClass fcd
   -- important: node should already be canonicalized!
   -- first lookup the node in the assoc to ensure uniqueness
@@ -295,7 +296,7 @@ egAddNodeSub q fcd = do
       eci <- gets (ILM.partialLookup x . egClassMap)
       let d = eciData eci
       pure (ChangedNo, ENodeTriple n x d)
-    Nothing -> postAddNodeHook q $ state $ \eg ->
+    Nothing -> postAddNodeHook $ state $ \eg ->
       -- FIXME: should this run eHook?
       -- node does not exist; get new node and class ids
       let (n, nodeSource') = sourceAddInc (egNodeSource eg)
@@ -307,23 +308,23 @@ egAddNodeSub q fcd = do
           -- insert into the hashcons
           hc' = ILM.insert n x (egHashCons eg)
           -- analyze the node and put that info in the class map
-          d = eaMake q (fmap entData fcd)
+          d = eaMake (fmap entData fcd)
           eci = EClassInfo d (ILS.singleton n) ILS.empty
           classMap' = ILM.insert x eci (egClassMap eg)
           eg' = eg { egNodeSource = nodeSource', egClassSource = classSource', egEquivFind = ef', egNodeAssoc = assoc', egHashCons = hc', egClassMap = classMap' }
       in ((ChangedYes, ENodeTriple n x d), eg')
 
-postAddNodeHook :: (EAnalysis d f q) => q -> State (EGraph d f) (Changed, ENodeTriple d) -> State (EGraph d f) (Changed, ENodeTriple d)
-postAddNodeHook q m = do
+postAddNodeHook :: (EAnalysis d f) => State (EGraph d f) (Changed, ENodeTriple d) -> State (EGraph d f) (Changed, ENodeTriple d)
+postAddNodeHook m = do
      (c, nt) <- m
      if c == ChangedYes
        then do
-         eHook q (entClass nt)
+         eHook (entClass nt)
          pure (c, nt)
        else pure (c, nt)
 
-egAddNodeSubId :: (EAnalysis d f q, Functor f, Hashable (f EClassId)) => q -> f EClassId -> State (EGraph d f) (Changed, ENodeTriple d)
-egAddNodeSubId q fc = do
+egAddNodeSubId :: (EAnalysis d f, Functor f, Hashable (f EClassId)) =>  f EClassId -> State (EGraph d f) (Changed, ENodeTriple d)
+egAddNodeSubId fc = do
   -- important: node should already be canonicalized!
   -- first lookup the node in the assoc to ensure uniqueness
   mayNodeId <- gets (assocLookupByValue fc . egNodeAssoc)
@@ -333,7 +334,7 @@ egAddNodeSubId q fc = do
       eci <- gets (ILM.partialLookup x . egClassMap)
       let d = eciData eci
       pure (ChangedNo, ENodeTriple n x d)
-    Nothing -> postAddNodeHook q $ state $ \eg ->
+    Nothing -> postAddNodeHook $ state $ \eg ->
       -- node does not exist; get new node and class ids
       let (n, nodeSource') = sourceAddInc (egNodeSource eg)
           (x, classSource') = sourceAddInc (egClassSource eg)
@@ -346,7 +347,7 @@ egAddNodeSubId q fc = do
           -- analyze the node and put that info in the class map
           getAnalysis c = eciData $ ILM.partialLookup c (egClassMap eg)
           fd = fmap getAnalysis fc
-          d = eaMake q fd
+          d = eaMake fd
           -- TODO: post analysis hook
           eci = EClassInfo d (ILS.singleton n) ILS.empty
           classMap' = ILM.insert x eci (egClassMap eg)
@@ -355,8 +356,8 @@ egAddNodeSubId q fc = do
 
 -- private
 -- Similar in structure to foldWholeTrackM
-egAddTermSub :: (EAnalysis d f q, RecursiveWhole t f, Traversable f, Hashable (f EClassId)) =>q -> t -> State (EGraph d f) (AddNodeRes d, ENodeTriple d)
-egAddTermSub q = go where
+egAddTermSub :: (EAnalysis d f, RecursiveWhole t f, Traversable f, Hashable (f EClassId)) =>t -> State (EGraph d f) (AddNodeRes d, ENodeTriple d)
+egAddTermSub = go where
   go t = do
     -- unwrap to work with the functor layer
     let ft = project t
@@ -366,7 +367,7 @@ egAddTermSub q = go where
     let (AddNodeRes changed1 children, fx) = sequenceA frx
     -- now fx should be canonicalized by construction
     -- add the node to get its node and class ids
-    (changed2, z@(ENodeTriple n _ _)) <- egAddNodeSub q fx
+    (changed2, z@(ENodeTriple n _ _)) <- egAddNodeSub fx
     -- now update all its children to add this as a parent
     unless (Seq.null children) $
       modify' $ \eg ->
@@ -377,8 +378,8 @@ egAddTermSub q = go where
 
 -- | Adds a term (recursively) to the graph. If already in the graph, returns 'ChangedNo' and existing class id. Otherwise
 -- returns 'ChangedYes' and a new class id.
-egAddTerm :: (EAnalysis d f q, RecursiveWhole t f, Traversable f, Hashable (f EClassId)) =>q -> t -> State (EGraph d f) (Changed, EClassId)
-egAddTerm q t = fmap (\(AddNodeRes c _, ENodeTriple _ x _) -> (c, x)) (egAddTermSub q t)
+egAddTerm :: (EAnalysis d f, RecursiveWhole t f, Traversable f, Hashable (f EClassId)) => t -> State (EGraph d f) (Changed, EClassId)
+egAddTerm t = fmap (\(AddNodeRes c _, ENodeTriple _ x _) -> (c, x)) (egAddTermSub t)
 
 -- | Merges two classes:
 -- Returns 'Nothing' if the classes are not found
@@ -511,29 +512,15 @@ egRebuildNodeRound origHc wl parents = do
   let finalParents = ILS.difference candParents touchedClasses
   pure (touchedClasses, parentWl, finalParents)
 
--- egRebuildClassSingle :: EAnalysis d f q => q -> EClassId -> IntLikeSet EClassId -> IntLikeMap EClassId (EClassInfo d) -> IntLikeMap EClassId (EClassInfo d)
--- egRebuildClassSingle q newClass oldClasses initCm =
---   let EClassInfo rootData rootNodes rootParents = ILM.partialLookup newClass initCm
---       -- TODO: maybe extract the finalData to propagate eaJoin properly?
---       finalData = eaJoin q rootData (fmap (\c -> eciData (ILM.partialLookup c initCm)) (ILS.toList oldClasses))
---       -- keep dead self nodes here. will be dropped in compact
---       finalNodes = foldl' (\s c -> ILS.union s (eciNodes (ILM.partialLookup c initCm))) rootNodes (ILS.toList oldClasses)
---       -- keep dead parent nodes here, just exclude self nodes. will be dropped in compact
---       lookupParents c = eciParents (ILM.partialLookup c initCm)
---       candParents = foldl' (\s c -> ILS.union s (lookupParents c)) rootParents (ILS.toList oldClasses)
---       finalParents = ILS.difference candParents finalNodes
---       finalInfo = EClassInfo finalData finalNodes finalParents
---       finalCm = ILM.insert newClass finalInfo initCm
---   in finalCm
-egRebuildClassSingle :: EAnalysis d f q => q -> IntLikeMap EClassId (EClassInfo d) -> EClassId -> IntLikeSet EClassId -> Writer (IntLikeSet ENodeId) (EClassInfo d)
-egRebuildClassSingle q baseCm newClass oldClasses =
+egRebuildClassSingle :: EAnalysisMerge d => IntLikeMap EClassId (EClassInfo d) -> EClassId -> IntLikeSet EClassId -> Writer (IntLikeSet ENodeId) (EClassInfo d)
+egRebuildClassSingle baseCm newClass oldClasses =
   let EClassInfo rootData rootNodes rootParents = ILM.partialLookup newClass baseCm
 
       lookupNodes c = eciNodes (ILM.partialLookup c baseCm)
       lookupParents c = eciParents (ILM.partialLookup c baseCm)
       lookupData c = eciData (ILM.partialLookup c baseCm)
 
-      (finalData, classToReanalyze) = egJoinAnalysis q (newClass, rootData) [ (c, lookupData c) | c <-  ILS.toList oldClasses ]
+      (finalData, classToReanalyze) = egJoinAnalysis (newClass, rootData) [ (c, lookupData c) | c <-  ILS.toList oldClasses ]
 
       nodesToReanalyze = foldMap lookupParents (ILS.toList classToReanalyze)
       -- keep dead self nodes here. will be dropped in compact
@@ -547,31 +534,31 @@ egRebuildClassSingle q baseCm newClass oldClasses =
 
 -- private
 -- Merge analyses for all classes together. When an old analyses
-egJoinAnalysis :: (EAnalysis d f q) => q -> (EClassId, d) -> [(EClassId, d)] -> (d, IntLikeSet EClassId)
-egJoinAnalysis q parent oldData = (finalData, ILS.fromList dirtyClasses) where
-    finalData = eaJoin q (snd parent) (map snd oldData)
-    dirtyClasses = [ cid | (cid, old) <- parent:oldData, rightRequiresUpdate q finalData old ]
+egJoinAnalysis :: (EAnalysisMerge d) => (EClassId, d) -> [(EClassId, d)] -> (d, IntLikeSet EClassId)
+egJoinAnalysis parent oldData = (finalData, ILS.fromList dirtyClasses) where
+    finalData = eaJoin (snd parent) (map snd oldData)
+    dirtyClasses = [ cid | (cid, old) <- parent:oldData, rightRequiresUpdate finalData old ]
 
 
 -- private
 -- Rebuilds the classmap: merges old class infos into root class infos
 -- Returns list of modified root classes
-egRebuildClassMap :: EAnalysis d f q => q -> IntLikeSet EClassId -> State (EGraph d f) (IntLikeMultiMap EClassId EClassId)
-egRebuildClassMap q touchedClasses = state $ \eg ->
+egRebuildClassMap :: EAnalysis d f => IntLikeSet EClassId -> State (EGraph d f) (IntLikeMultiMap EClassId EClassId)
+egRebuildClassMap touchedClasses = state $ \eg ->
   let ef = egEquivFind eg
       dc = egDeadClasses eg
       roots = ILS.map (`efLookupRoot` ef) touchedClasses
       rootMap = ILM.fromList (fmap (\r -> (r, ILS.difference (efLookupLeaves r ef) dc)) (ILS.toList roots))
 
-      (newClassMap, nodesToReanalyze) = runWriter (ILM.traverseWithKey (egRebuildClassSingle q (egClassMap eg)) rootMap)
+      (newClassMap, nodesToReanalyze) = runWriter (ILM.traverseWithKey (egRebuildClassSingle (egClassMap eg)) rootMap)
 
       egAnaWorklist' = ILS.union (egAnaWorklist eg) nodesToReanalyze
       cm' = ILM.union newClassMap (egClassMap eg)
       dc' = foldl' ILS.union (egDeadClasses eg) (ILM.elems rootMap)
   in (rootMap, eg { egClassMap = cm', egDeadClasses = dc', egAnaWorklist = egAnaWorklist' })
 
-egAnalyzeTerm :: forall d f q. (Functor f, EAnalysis d f q) => q ->  ENodeId -> State (EGraph d f) d
-egAnalyzeTerm q k = do
+egAnalyzeTerm :: forall d f. (Functor f, EAnalysis d f) => ENodeId -> State (EGraph d f) d
+egAnalyzeTerm k = do
     classMap <- gets egClassMap
     let 
       lookupAnalysis :: EClassId -> d
@@ -579,39 +566,39 @@ egAnalyzeTerm q k = do
 
     term <- gets (assocPartialLookupByKey k . egNodeAssoc)
     let anaTerm = fmap lookupAnalysis term
-    pure (eaMake q anaTerm)
+    pure (eaMake anaTerm)
 
-egReanalyzeRounds :: (Functor f, EAnalysis d f q) => q -> State (EGraph d f) ()
-egReanalyzeRounds q = do
+egReanalyzeRounds :: (Functor f, EAnalysis d f) => State (EGraph d f) ()
+egReanalyzeRounds = do
   wl <- egTakeAnaWorklist
   unless (ILS.null wl) $ do
-    egReanalyzeRound q wl
-    egReanalyzeRounds q
+    egReanalyzeRound wl
+    egReanalyzeRounds
 
-egReanalyzeRound :: (Functor f, EAnalysis d f q) => q -> AnalysisWorklist -> State (EGraph d f) ()
-egReanalyzeRound q wl = do
+egReanalyzeRound :: (Functor f, EAnalysis d f) =>  AnalysisWorklist -> State (EGraph d f) ()
+egReanalyzeRound wl = do
     origHc <- gets egHashCons
     let classReana = ILM.fromListWith ILS.union [ (ILM.partialLookup c origHc, ILS.singleton c) | c <- ILS.toList wl ]
     forM_ (ILM.toList classReana) $ \(clazz, reanaTerms) -> do
-        o <- mapM (egAnalyzeTerm q) (ILS.toList reanaTerms)
-        egAddAnalysis q clazz o
-        eHook q clazz
-egAddAnalysis :: EAnalysis d f q => q -> EClassId -> [d] -> State (EGraph d f) ()
-egAddAnalysis q anaClass newData = do
+        o <- mapM (egAnalyzeTerm) (ILS.toList reanaTerms)
+        egAddAnalysis clazz o
+        eHook clazz
+egAddAnalysis :: EAnalysis d f => EClassId -> [d] -> State (EGraph d f) ()
+egAddAnalysis anaClass newData = do
     classMap <- gets egClassMap
     let 
       classData = ILM.partialLookup anaClass classMap
       oldData = eciData classData
 
-      joined = eaJoin q oldData newData
-      addNewDirty wl = if rightRequiresUpdate q joined oldData then ILS.union (eciParents classData) wl else wl
+      joined = eaJoin oldData newData
+      addNewDirty wl = if rightRequiresUpdate joined oldData then ILS.union (eciParents classData) wl else wl
 
       classData' = classData { eciData = joined }
     modify' (\eg -> eg { egClassMap = ILM.insert anaClass classData' (egClassMap eg), egAnaWorklist = addNewDirty (egAnaWorklist eg) })
 
 -- | Rebuilds the 'EGraph' after merging to allow adding more terms. (Always safe to call.)
-egRebuild1 :: (EAnalysis d f q, Traversable f, Hashable (f EClassId)) => q -> State (EGraph d f) (IntLikeMultiMap EClassId EClassId)
-egRebuild1 q = goRec where
+egRebuild1 :: (EAnalysis d f, Traversable f, Hashable (f EClassId)) => State (EGraph d f) (IntLikeMultiMap EClassId EClassId)
+egRebuild1 = goRec where
   goRec = do
     -- Note the existing hashcons
     origHc <- gets egHashCons
@@ -620,8 +607,8 @@ egRebuild1 q = goRec where
     -- Merge and induce equivalences
     tc <- goNodeRounds origHc ILS.empty wl ILS.empty
     -- Now everything is merged so we only have to rewrite the changed parts of the classmap
-    out <- egRebuildClassMap q tc
-    egReanalyzeRounds q
+    out <- egRebuildClassMap tc
+    egReanalyzeRounds
     pure out
   goNodeRounds !origHc !tc !wl !parents =
     if null wl && ILS.null parents
@@ -632,11 +619,11 @@ egRebuild1 q = goRec where
         goNodeRounds origHc mergedTc newWl newParents
 
 -- | EAnalysis might dirty the graph, just throw a loop at it for now
-egRebuild :: (EAnalysis d f q, Traversable f, Hashable (f EClassId)) => q -> State (EGraph d f) (IntLikeMultiMap EClassId EClassId)
-egRebuild q = loop mempty
+egRebuild :: (EAnalysis d f, Traversable f, Hashable (f EClassId)) => State (EGraph d f) (IntLikeMultiMap EClassId EClassId)
+egRebuild = loop mempty
   where
     loop acc = do
-       o <- egRebuild1 q
+       o <- egRebuild1
        keepGoing <- gets egNeedsRebuild
        if keepGoing
        then loop (ILM.union o acc)
@@ -695,8 +682,8 @@ type MUnion f d = StateT (EGraph d f) (State (IntLikeMap EClassId EClassId))
 
 -- | Merges two EGraphs. The resulting EGraph contains all nodes from both graphs.
 -- When two nodes are in one equivalence class in either graph, they are merged in the resulting graph.
-egUnionGraphs :: forall f d q. (Hashable (f EClassId), EAnalysis d f q, Traversable f) => q -> EGraph d f -> EGraph d f -> (EGraph d f, IntLikeMap EClassId EClassId)
-egUnionGraphs q input1 input2 = runState (execStateT (processLoop (S.toList queue0) pending0) eg1) mempty
+egUnionGraphs :: forall f d. (Hashable (f EClassId), EAnalysis d f, Traversable f) =>  EGraph d f -> EGraph d f -> (EGraph d f, IntLikeMap EClassId EClassId)
+egUnionGraphs input1 input2 = runState (execStateT (processLoop (S.toList queue0) pending0) eg1) mempty
   where
     -- Uses the larger graph as base, insert the others node into it
     (eg1, eg2)
@@ -724,11 +711,11 @@ egUnionGraphs q input1 input2 = runState (execStateT (processLoop (S.toList queu
     go n2 = do
         let term = assocPartialLookupByKey n2 (egNodeAssoc eg2)
         term1 <- traverse getMapping term
-        (_changed, ENodeTriple _ cid1 _) <- generalizeS (egAddNodeSubId q term1)
+        (_changed, ENodeTriple _ cid1 _) <- generalizeS (egAddNodeSubId term1)
         let class2 = lookupClass2 n2
         tryGetMapping class2 >>= \case
             Nothing -> do
-               generalizeS (egAddAnalysis q cid1 [lookupData2 class2])
+               generalizeS (egAddAnalysis cid1 [lookupData2 class2])
                setMapping class2 cid1
             Just cid1' -> () <$ generalizeS (egMerge cid1 cid1')
     getMapping n = lift (gets (ILM.partialLookup n))
@@ -751,8 +738,8 @@ type EClassOut = EClassId
 type MIntersect f d = StateT (EGraph d f) (State (IntLikeMap EClassLeft (IntLikeSet EClassOut), IntLikeMap EClassOut EClassRight, HashMap (EClassLeft, EClassRight) EClassOut))
 
 -- | Feels very similar to NFA intersection, but I wrote this while very tired so I based it on https://github.com/remysucre/eggegg/blob/main/src/main.rs
-egIntersectGraphs  :: forall f d q. (Hashable (f EClassId), EAnalysis d f q, Traversable f) => q -> EGraph d f -> EGraph d f -> EGraph d f
-egIntersectGraphs q left0 right0 = evalState (execStateT goOuter  egNew) (ILM.empty, ILM.empty, HM.empty)
+egIntersectGraphs  :: forall f d. (Hashable (f EClassId), EAnalysis d f, Traversable f) => EGraph d f -> EGraph d f -> EGraph d f
+egIntersectGraphs left0 right0 = evalState (execStateT goOuter  egNew) (ILM.empty, ILM.empty, HM.empty)
    where
     goOuter = do
       ch <- execWriterT go
@@ -772,7 +759,7 @@ egIntersectGraphs q left0 right0 = evalState (execStateT goOuter  egNew) (ILM.em
                 Just term2 -> do
                     let node2 = lookupNode2 term2
                         class2 = lookupClass2 node2
-                    (isNew, midTriple) <- inEgg (egAddNodeSubId q termm)
+                    (isNew, midTriple) <- inEgg (egAddNodeSubId termm)
                     tell isNew
                     let classMid = entClass midTriple
                     insertMid class1 classMid
@@ -790,7 +777,7 @@ egIntersectGraphs q left0 right0 = evalState (execStateT goOuter  egNew) (ILM.em
         case prev of
           Just out -> do
             change <- fmap fromJust (inEgg (egMerge classMid out))
-            _ <- inEgg (egRebuild q)
+            _ <- inEgg egRebuild
             tell change
           Nothing -> lift $ lift $ modify' $ over3 $ HM.insert (class1, class2) classMid
     setRight :: EClassOut -> EClassRight -> WriterT Changed (MIntersect f d) ()
