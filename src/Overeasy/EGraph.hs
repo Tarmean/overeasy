@@ -36,7 +36,9 @@ module Overeasy.EGraph
   , egClasses
   , egCanonicalize
   , egAddTerm
+  , egAddFlatTerm
   , egAddAnalysis
+  , egAddNodeSubId
   , egMerge
   , egMergeMany
   , egUnionGraphs
@@ -358,6 +360,11 @@ egAddNodeSubId fc = do
           classMap' = ILM.insert x eci (egClassMap eg)
           eg' = eg { egNodeSource = nodeSource', egClassSource = classSource', egEquivFind = ef', egNodeAssoc = assoc', egHashCons = hc', egClassMap = classMap' }
       in ((ChangedYes, ENodeTriple n x d), eg')
+
+egAddFlatTerm :: (EAnalysis d f, Functor f, Hashable (f EClassId)) =>  f EClassId -> State (EGraph d f) (Changed, EClassId)
+egAddFlatTerm f = do
+    (c, trip) <- egAddNodeSubId f
+    pure (c, entClass trip)
 
 -- private
 -- Similar in structure to foldWholeTrackM
