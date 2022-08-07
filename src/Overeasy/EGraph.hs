@@ -112,13 +112,13 @@ class EAnalysis d f q | q -> d f where
   eHook :: EAnalysisHook m d f q => q -> EClassId -> m ()
   eHook _ _ = pure ()
 
-class (Monad m, EAnalysis d f q) => EAnalysisHook m d f q| q -> d f, m -> d f where
+class (Monad m) => EAnalysisHook m d f q|  m -> d f where
     eaClassData :: q -> EClassId -> m d
-    eaAddTerm :: (Functor f, Hashable (f EClassId)) => q -> f EClassId -> m EClassId
-    eaRefineAnalysis :: q -> EClassId -> d -> m ()
+    eaAddTerm :: (EAnalysis d f q, Functor f, Hashable (f EClassId)) => q -> f EClassId -> m EClassId
+    eaRefineAnalysis :: (EAnalysis d f q)  => q -> EClassId -> d -> m ()
     eaHalt :: q -> m ()
     eaMerge :: q -> EClassId -> EClassId -> m ()
-instance (EAnalysis d f q) => EAnalysisHook (State (EGraph d f)) d f q where
+instance EAnalysisHook (State (EGraph d f)) d f q where
     eaClassData _ cid = do
       cmap <- gets egClassMap
       pure (eciData $ ILM.partialLookup cid cmap)
