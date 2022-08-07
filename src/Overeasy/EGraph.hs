@@ -294,7 +294,7 @@ egAddNodeSub q fcd = do
       eci <- gets (ILM.partialLookup x . egClassMap)
       let d = eciData eci
       pure (ChangedNo, ENodeTriple n x d)
-    Nothing -> state $ \eg ->
+    Nothing -> postAddNodeHook q $ state $ \eg ->
       -- FIXME: should this run eHook?
       -- node does not exist; get new node and class ids
       let (n, nodeSource') = sourceAddInc (egNodeSource eg)
@@ -312,6 +312,12 @@ egAddNodeSub q fcd = do
           eg' = eg { egNodeSource = nodeSource', egClassSource = classSource', egEquivFind = ef', egNodeAssoc = assoc', egHashCons = hc', egClassMap = classMap' }
       in ((ChangedYes, ENodeTriple n x d), eg')
 
+postAddNodeHook :: EAnalysis d f q => q -> State (EGraph d f) (Changed, ENodeTriple d) -> State (EGraph d f) (Changed, ENodeTriple d)
+postAddNodeHook q m = do
+     (c, nt) <- m
+     eHook q (entClass nt)
+     pure (c,nt)
+
 egAddNodeSubId :: (EAnalysis d f q, Functor f, Hashable (f EClassId)) => q -> f EClassId -> State (EGraph d f) (Changed, ENodeTriple d)
 egAddNodeSubId q fc = do
   -- important: node should already be canonicalized!
@@ -323,7 +329,7 @@ egAddNodeSubId q fc = do
       eci <- gets (ILM.partialLookup x . egClassMap)
       let d = eciData eci
       pure (ChangedNo, ENodeTriple n x d)
-    Nothing -> state $ \eg ->
+    Nothing -> postAddNodeHook q $ state $ \eg ->
       -- node does not exist; get new node and class ids
       let (n, nodeSource') = sourceAddInc (egNodeSource eg)
           (x, classSource') = sourceAddInc (egClassSource eg)
