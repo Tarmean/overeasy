@@ -82,7 +82,6 @@ import Data.Functor.Identity (runIdentity)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.Maybe (fromJust)
-import Debug.Trace
 
 -- | An opaque class id
 newtype EClassId = EClassId { unEClassId :: Int }
@@ -110,16 +109,16 @@ class EAnalysis d f q | q -> d f where
   eaJoin2 :: q -> d -> d -> (d, EAnalysisChange)
   eaJoin2 q l r = (eaJoin q l [r], eaWhat q l r)
 
-  eHook :: q -> EClassId -> State (EGraph d f) ()
+  eHook :: EAnalysisHook m d f q => q -> EClassId -> m ()
   eHook _ _ = pure ()
 
-class EAnalysis d f q => EAnalysisHook m d f q| q -> d f, m -> d f where
+class (Monad m, EAnalysis d f q) => EAnalysisHook m d f q| q -> d f, m -> d f where
     eaClassData :: q -> EClassId -> m d
-    eaAddTerm :: q -> f EClassId -> m EClassId
+    eaAddTerm :: (Functor f, Hashable (f EClassId)) => q -> f EClassId -> m EClassId
     eaRefineAnalysis :: q -> EClassId -> d -> m ()
     eaHalt :: q -> m ()
     eaMerge :: q -> EClassId -> EClassId -> m ()
-instance (Hashable (f EClassId), Functor f, EAnalysis d f q) => EAnalysisHook (State (EGraph d f)) d f q where
+instance (EAnalysis d f q) => EAnalysisHook (State (EGraph d f)) d f q where
     eaClassData _ cid = do
       cmap <- gets egClassMap
       pure (eciData $ ILM.partialLookup cid cmap)
@@ -314,7 +313,7 @@ egAddNodeSub q fcd = do
           eg' = eg { egNodeSource = nodeSource', egClassSource = classSource', egEquivFind = ef', egNodeAssoc = assoc', egHashCons = hc', egClassMap = classMap' }
       in ((ChangedYes, ENodeTriple n x d), eg')
 
-postAddNodeHook :: EAnalysis d f q => q -> State (EGraph d f) (Changed, ENodeTriple d) -> State (EGraph d f) (Changed, ENodeTriple d)
+postAddNodeHook :: (EAnalysis d f q) => q -> State (EGraph d f) (Changed, ENodeTriple d) -> State (EGraph d f) (Changed, ENodeTriple d)
 postAddNodeHook q m = do
      (c, nt) <- m
      if c == ChangedYes
@@ -593,7 +592,6 @@ egReanalyzeRound :: (Functor f, EAnalysis d f q) => q -> AnalysisWorklist -> Sta
 egReanalyzeRound q wl = do
     origHc <- gets egHashCons
     let classReana = ILM.fromListWith ILS.union [ (ILM.partialLookup c origHc, ILS.singleton c) | c <- ILS.toList wl ]
-    traceM ("Reanalyze round, : " ++ show wl)
     forM_ (ILM.toList classReana) $ \(clazz, reanaTerms) -> do
         o <- mapM (egAnalyzeTerm q) (ILS.toList reanaTerms)
         egAddAnalysis q clazz o
