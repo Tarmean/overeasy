@@ -13,6 +13,7 @@ module Overeasy.EGraph
   , EAnalysisFixpoint (..)
   , EAnalysisHook (..)
   , EClassInfo (..)
+  , EAnalysisChange(..)
   , EGraph
   , WorkItem
   , WorkList
@@ -133,7 +134,7 @@ instance (Hashable (f EClassId), Functor f, EAnalysis d f q) => EAnalysisHook (S
        egAddAnalysis q tid [d]
     -- FIXME: we should be able to signify failure when an analysis deduces contradiction
     -- this means everything in this module needs to run in an ExceptT monad or whatever
-    eaHalt _ = undefined
+    eaHalt _ = error "EAnalysis deduced conflict, but this is not implemented yet"
 
  
 
@@ -315,8 +316,11 @@ egAddNodeSub q fcd = do
 postAddNodeHook :: EAnalysis d f q => q -> State (EGraph d f) (Changed, ENodeTriple d) -> State (EGraph d f) (Changed, ENodeTriple d)
 postAddNodeHook q m = do
      (c, nt) <- m
-     eHook q (entClass nt)
-     pure (c,nt)
+     if c == ChangedYes
+       then do
+         eHook q (entClass nt)
+         pure (c, nt)
+       else pure (c, nt)
 
 egAddNodeSubId :: (EAnalysis d f q, Functor f, Hashable (f EClassId)) => q -> f EClassId -> State (EGraph d f) (Changed, ENodeTriple d)
 egAddNodeSubId q fc = do
