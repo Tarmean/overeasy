@@ -757,14 +757,16 @@ egIntersectGraphs left0 right0 = evalState (execStateT goOuter  egNew) (ILM.empt
               case sequence mterm2 of
                 Nothing -> pure ()
                 Just term2 -> do
-                    let node2 = lookupNode2 term2
-                        class2 = lookupClass2 node2
-                    (isNew, midTriple) <- inEgg (egAddNodeSubId termm)
-                    tell isNew
-                    let classMid = entClass midTriple
-                    insertMid class1 classMid
-                    setRight classMid class2
-                    tryInsertBack class1 class2 classMid
+                    case lookupNode2 term2 of
+                      Nothing -> pure ()
+                      Just node2 -> do
+                        let class2 = lookupClass2 node2
+                        (isNew, midTriple) <- inEgg (egAddNodeSubId termm)
+                        tell isNew
+                        let classMid = entClass midTriple
+                        insertMid class1 classMid
+                        setRight classMid class2
+                        tryInsertBack class1 class2 classMid
 
     insertMid :: EClassLeft -> EClassOut -> WriterT Changed (MIntersect f d) ()
     insertMid class1 classMid = do
@@ -797,14 +799,14 @@ egIntersectGraphs left0 right0 = evalState (execStateT goOuter  egNew) (ILM.empt
     snd3 (_,b,_) = b
     fst3 (a,_,_) = a
 
-    lookupNode2 :: f EClassRight -> ENodeId
-    lookupNode2 cl = assocPartialLookupByValue cl (egNodeAssoc right0)
+    lookupNode2 :: f EClassRight -> Maybe ENodeId
+    lookupNode2 cl = assocLookupByValue cl (egNodeAssoc right0)
 
     lookupClass2 :: ENodeId -> EClassRight
-    lookupClass2 cl = ILM.findWithDefault (error "lookupNode2") cl (egHashCons right0)
+    lookupClass2 cl = ILM.findWithDefault (error "lookupClass2") cl (egHashCons right0)
 
     lookupClass1 :: ENodeId -> EClassLeft
-    lookupClass1 cl = ILM.findWithDefault (error "lookupNode1") cl (egHashCons left0)
+    lookupClass1 cl = ILM.findWithDefault (error "lookupClass1") cl (egHashCons left0)
 
 
 
