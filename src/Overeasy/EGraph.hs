@@ -98,6 +98,8 @@ newtype ENodeId = ENodeId { unENodeId :: Int }
 -- so we can catch weird merges and so on
 class EAnalysisMerge d => EAnalysis d f where
   eaMake :: f d -> d
+  eHook :: EAnalysisHook m d f => EClassId -> m ()
+  eHook _ = pure ()
 class EAnalysisMerge d where
   eaJoin :: d -> [d] -> d
   eaWhat :: d -> d -> EAnalysisChange
@@ -109,8 +111,6 @@ class EAnalysisMerge d where
   eaJoin2 :: d -> d -> (d, EAnalysisChange)
   eaJoin2 l r = (eaJoin l [r], eaWhat l r)
 
-  eHook :: EAnalysisHook m d f => EClassId -> m ()
-  eHook _ = pure ()
 
 class (Monad m) => EAnalysisHook m d f |  m -> d f where
     eaClassData ::  EClassId -> m d
