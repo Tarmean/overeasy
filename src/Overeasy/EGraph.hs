@@ -361,10 +361,17 @@ egAddNodeSubId fc = do
           eg' = eg { egNodeSource = nodeSource', egClassSource = classSource', egEquivFind = ef', egNodeAssoc = assoc', egHashCons = hc', egClassMap = classMap' }
       in ((ChangedYes, ENodeTriple n x d), eg')
 
-egAddFlatTerm :: (EAnalysis d f, Functor f, Hashable (f EClassId)) =>  f EClassId -> State (EGraph d f) (Changed, EClassId)
+egAddFlatTerm :: (EAnalysis d f, Functor f, Foldable f, Hashable (f EClassId)) =>  f EClassId -> State (EGraph d f) (Changed, EClassId)
 egAddFlatTerm f = do
-    (c, trip) <- egAddNodeSubId f
-    pure (c, entClass trip)
+    (change, trip) <- egAddNodeSubId f
+    let n = entNode trip
+    let children = F.toList f
+    unless (null children) $
+      modify' $ \eg ->
+        -- Add node to class parents (unless it's a self parent)
+        let cm' = foldl' (\cm c -> ILM.adjust (\v -> v { eciParents = ILS.insert n (eciParents v) }) c cm) (egClassMap eg) children
+        in eg { egClassMap = cm' }
+    pure (change, entClass trip)
 
 -- private
 -- Similar in structure to foldWholeTrackM
