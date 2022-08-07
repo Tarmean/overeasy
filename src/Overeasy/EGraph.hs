@@ -11,6 +11,7 @@ module Overeasy.EGraph
   , EAnalysisOff (..)
   , EAnalysisAlgebra (..)
   , EAnalysisFixpoint (..)
+  , EAnalysisHook (..)
   , EClassInfo (..)
   , EGraph
   , WorkItem
@@ -44,9 +45,9 @@ module Overeasy.EGraph
   ) where
 
 import Control.DeepSeq (NFData)
-import Control.Monad (unless, forM_, when)
+import Control.Monad (unless, forM_)
 import Control.Monad.State.Strict (State, gets, modify', state, runState, StateT(..), execStateT, evalState)
-import Control.Monad.Writer (Writer, runWriter, tell, WriterT (runWriterT), execWriterT)
+import Control.Monad.Writer (Writer, runWriter, tell, WriterT, execWriterT)
 import Data.Foldable (foldl', toList)
 import Data.Functor.Foldable (project)
 import Data.Hashable (Hashable)
@@ -77,7 +78,6 @@ import qualified Data.Set as S
 import Overeasy.Pending (Pending, pendingNew, pendingMarkKnown, pendingFinished)
 import Control.Monad.Trans (lift)
 import Data.Functor.Identity (runIdentity)
-import Data.Monoid (Any(..))
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.Maybe (fromJust)
@@ -110,6 +110,32 @@ class EAnalysis d f q | q -> d f where
 
   eHook :: q -> EClassId -> State (EGraph d f) ()
   eHook _ _ = pure ()
+
+class EAnalysis d f q => EAnalysisHook m d f q| q -> d f, m -> d f where
+    eaClassData :: q -> EClassId -> m d
+    eaAddTerm :: q -> f EClassId -> m EClassId
+    eaRefineAnalysis :: q -> EClassId -> d -> m ()
+    eaHalt :: q -> m ()
+    eaMerge :: q -> EClassId -> EClassId -> m ()
+instance (Hashable (f EClassId), Functor f, EAnalysis d f q) => EAnalysisHook (State (EGraph d f)) d f q where
+    eaClassData _ cid = do
+      cmap <- gets egClassMap
+      pure (eciData $ ILM.partialLookup cid cmap)
+    eaAddTerm q tid = do
+       (_, trip) <- egAddNodeSubId q tid
+       pure (entClass trip)
+    eaMerge _ cid cid2 = do
+       m <- egMerge cid cid2
+       case m of
+         Just _ -> pure ()
+         Nothing -> error "eaMerge: merge failed"
+    eaRefineAnalysis q tid d = do
+       egAddAnalysis q tid [d]
+    -- FIXME: we should be able to signify failure when an analysis deduces contradiction
+    -- this means everything in this module needs to run in an ExceptT monad or whatever
+    eaHalt _ = undefined
+
+ 
 
 
 rightRequiresUpdate :: EAnalysis d f q => q -> d -> d -> Bool
