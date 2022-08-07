@@ -12,6 +12,7 @@ module Overeasy.EGraph
   -- , EAnalysisAlgebra (..)
   -- , EAnalysisFixpoint (..)
   , EAnalysisMerge(..)
+  , EAnalysisIntersection(..)
   , EAnalysisHook (..)
   , EClassInfo (..)
   , EAnalysisChange(..)
@@ -64,7 +65,7 @@ import qualified IntLike.MultiMap as ILMM
 import IntLike.Set (IntLikeSet)
 import qualified IntLike.Set as ILS
 import Overeasy.Assoc (Assoc, AssocInsertRes (..), assocCanCompact, assocCompactInc, assocInsertInc, assocLookupByValue,
-                       assocNew, assocPartialLookupByKey, assocToList, assocSize, assocPartialLookupByValue)
+                       assocNew, assocPartialLookupByKey, assocToList, assocSize)
 import Overeasy.Classes (Changed (..))
 import Overeasy.EquivFind (EquivFind, EquivMergeSetsRes (..), efAddInc, efClosure, efCompactInc, efFindRoot,
                            efLookupLeaves, efLookupRoot, efMergeSetsInc, efNew, efRoots, efRootsSize)
@@ -107,9 +108,13 @@ class EAnalysisMerge d where
   eaWhat l r 
     | l == r = UpdateNone
     | otherwise = UpdateBoth
-   
   eaJoin2 :: d -> d -> (d, EAnalysisChange)
   eaJoin2 l r = (eaJoin l [r], eaWhat l r)
+
+-- | Find information which holds accross both values
+-- This is currently only used for egraph intersection
+class EAnalysisIntersection d where 
+   eaMeet :: d -> d -> d
 
 
 class (Monad m) => EAnalysisHook m d f |  m -> d f where
@@ -738,7 +743,7 @@ type EClassOut = EClassId
 type MIntersect f d = StateT (EGraph d f) (State (IntLikeMap EClassLeft (IntLikeSet EClassOut), IntLikeMap EClassOut EClassRight, HashMap (EClassLeft, EClassRight) EClassOut))
 
 -- | Feels very similar to NFA intersection, but I wrote this while very tired so I based it on https://github.com/remysucre/eggegg/blob/main/src/main.rs
-egIntersectGraphs  :: forall f d. (Hashable (f EClassId), EAnalysis d f, Traversable f) => EGraph d f -> EGraph d f -> EGraph d f
+egIntersectGraphs  :: forall f d. (EAnalysisIntersection d, Hashable (f EClassId), EAnalysis d f, Traversable f) => EGraph d f -> EGraph d f -> EGraph d f
 egIntersectGraphs left0 right0 = evalState (execStateT goOuter  egNew) (ILM.empty, ILM.empty, HM.empty)
    where
     goOuter = do
@@ -781,7 +786,12 @@ egIntersectGraphs left0 right0 = evalState (execStateT goOuter  egNew) (ILM.empt
             change <- fmap fromJust (inEgg (egMerge classMid out))
             _ <- inEgg egRebuild
             tell change
-          Nothing -> lift $ lift $ modify' $ over3 $ HM.insert (class1, class2) classMid
+          Nothing -> do
+              lift $ lift $ modify' $ over3 $ HM.insert (class1, class2) classMid
+              let d1 = lookupData1 class1
+                  d2 = lookupData2 class2
+                  meet = eaMeet d1 d2
+              inEgg (egAddAnalysis classMid [meet])
     setRight :: EClassOut -> EClassRight -> WriterT Changed (MIntersect f d) ()
     setRight classMid class2 = lift $ lift $ modify' $ over2 $ ILM.insert classMid class2
     over1 f (a,b,c) = (f a, b,c)
@@ -808,7 +818,11 @@ egIntersectGraphs left0 right0 = evalState (execStateT goOuter  egNew) (ILM.empt
     lookupClass1 :: ENodeId -> EClassLeft
     lookupClass1 cl = ILM.findWithDefault (error "lookupClass1") cl (egHashCons left0)
 
+    lookupData1 :: EClassId -> d
+    lookupData1 cl = eciData $ ILM.partialLookup cl (egClassMap left0)
 
+    lookupData2 :: EClassId -> d
+    lookupData2 cl = eciData $ ILM.partialLookup cl (egClassMap right0)
 
 
 
