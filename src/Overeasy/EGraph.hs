@@ -82,6 +82,7 @@ import Data.Functor.Identity (runIdentity)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.Maybe (fromJust)
+import Debug.Trace
 
 -- | An opaque class id
 newtype EClassId = EClassId { unEClassId :: Int }
@@ -593,6 +594,7 @@ egReanalyzeRound q wl = do
     origHc <- gets egHashCons
     let classReana = ILM.fromListWith ILS.union [ (ILM.partialLookup c origHc, ILS.singleton c) | c <- ILS.toList wl ]
     forM_ (ILM.toList classReana) $ \(clazz, reanaTerms) -> do
+        traceM ("Reanalyze round, class: " ++ show clazz ++ ", reana terms: " ++ show reanaTerms)
         o <- mapM (egAnalyzeTerm q) (ILS.toList reanaTerms)
         egAddAnalysis q clazz o
         eHook q clazz
