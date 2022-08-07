@@ -7,7 +7,7 @@ module Overeasy.StateUtil
   ) where
 
 import Control.Monad (foldM)
-import Control.Monad.State.Strict (State, get, put)
+import Control.Monad.State.Strict (State, get, put, MonadState(..))
 import Overeasy.Classes (Changed (..))
 
 -- | Embeds a function that may fail in a stateful context
@@ -44,6 +44,6 @@ stateFailChanged f = do
 --   in (b, s')
 
 -- | 'foldM' specialized and flipped.
-stateFold :: Foldable t => b -> t a -> (b -> a -> State s b) -> State s b
+stateFold :: (MonadState s m, Foldable t) => b -> t a -> (b -> a -> m b) -> m b
 stateFold b as f = foldM f b as
 {-# INLINE stateFold #-}
