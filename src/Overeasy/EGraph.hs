@@ -50,7 +50,7 @@ module Overeasy.EGraph
   ) where
 
 import Control.DeepSeq (NFData)
-import Control.Monad (unless, forM_)
+import Control.Monad (unless, forM_, MonadPlus(mzero))
 import Control.Monad.State.Strict (gets, modify', state, StateT(..), execStateT, evalStateT)
 import Control.Monad.Writer (Writer, runWriter, tell, WriterT, execWriterT)
 import Data.Foldable (foldl', toList)
@@ -84,7 +84,6 @@ import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.Maybe (fromJust)
 import Control.Monad.State (MonadState)
-import Control.Applicative (Alternative)
 
 
 -- | An opaque class id
@@ -121,12 +120,13 @@ class EAnalysisIntersection d where
    eaMeet :: d -> d -> d
 
 
-class (Alternative m, MonadState (EGraph d f) m) => EAnalysisHook m d f | m -> d f where
+class Monad m => EAnalysisHook m d f | m -> d f where
     eaClassData ::  EClassId -> m d
     eaAddTerm :: (EAnalysis d f, Functor f, Hashable (f EClassId)) => f EClassId -> m EClassId
     eaRefineAnalysis :: (EAnalysis d f)  => EClassId -> d -> m ()
     eaMerge :: EClassId -> EClassId -> m ()
-instance (Alternative m, MonadState (EGraph d f) m) => EAnalysisHook (m) d f where
+    eaHalt :: m ()
+instance (MonadPlus m) => EAnalysisHook (StateT (EGraph d f) m) d f where
     eaClassData cid = do
       cmap <- gets egClassMap
       pure (eciData $ ILM.partialLookup cid cmap)
@@ -140,6 +140,7 @@ instance (Alternative m, MonadState (EGraph d f) m) => EAnalysisHook (m) d f whe
          Nothing -> error "eaMerge: merge failed"
     eaRefineAnalysis tid d = do
        egAddAnalysis tid [d]
+    eaHalt = mzero
 
  
 
@@ -289,7 +290,7 @@ instance Monoid (AddNodeRes d) where
   mappend = (<>)
 
 -- private
-egAddNodeSub :: (Alternative m, MonadState (EGraph d f) m, EAnalysis d f, Functor f, Hashable (f EClassId)) => f (ENodeTriple d) -> m (Changed, ENodeTriple d)
+egAddNodeSub :: (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f, Functor f, Hashable (f EClassId)) => f (ENodeTriple d) -> m (Changed, ENodeTriple d)
 egAddNodeSub fcd = do
   let fc = fmap entClass fcd
   -- important: node should already be canonicalized!
@@ -319,7 +320,7 @@ egAddNodeSub fcd = do
           eg' = eg { egNodeSource = nodeSource', egClassSource = classSource', egEquivFind = ef', egNodeAssoc = assoc', egHashCons = hc', egClassMap = classMap' }
       in ((ChangedYes, ENodeTriple n x d), eg')
 
-postAddNodeHook :: (Alternative m, MonadState (EGraph d f) m, EAnalysis d f) => m (Changed, ENodeTriple d) -> m (Changed, ENodeTriple d)
+postAddNodeHook :: (EAnalysisHook m d f, EAnalysis d f) => m (Changed, ENodeTriple d) -> m (Changed, ENodeTriple d)
 postAddNodeHook m = do
      (c, nt) <- m
      if c == ChangedYes
@@ -328,7 +329,7 @@ postAddNodeHook m = do
          pure (c, nt)
        else pure (c, nt)
 
-egAddNodeSubId :: (Alternative m, MonadState (EGraph d f) m, EAnalysis d f, Functor f, Hashable (f EClassId)) =>  f EClassId -> m (Changed, ENodeTriple d)
+egAddNodeSubId :: (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f, Functor f, Hashable (f EClassId)) =>  f EClassId -> m (Changed, ENodeTriple d)
 egAddNodeSubId fc = do
   -- important: node should already be canonicalized!
   -- first lookup the node in the assoc to ensure uniqueness
@@ -359,7 +360,7 @@ egAddNodeSubId fc = do
           eg' = eg { egNodeSource = nodeSource', egClassSource = classSource', egEquivFind = ef', egNodeAssoc = assoc', egHashCons = hc', egClassMap = classMap' }
       in ((ChangedYes, ENodeTriple n x d), eg')
 
-egAddFlatTerm :: (Alternative m, MonadState (EGraph d f) m, EAnalysis d f, Functor f, Foldable f, Hashable (f EClassId)) =>  f EClassId -> m (Changed, EClassId)
+egAddFlatTerm :: (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f, Functor f, Foldable f, Hashable (f EClassId)) =>  f EClassId -> m (Changed, EClassId)
 egAddFlatTerm f = do
     (change, trip) <- egAddNodeSubId f
     let n = entNode trip
@@ -373,7 +374,7 @@ egAddFlatTerm f = do
 
 -- private
 -- Similar in structure to foldWholeTrackM
-egAddTermSub :: (Alternative m, MonadState (EGraph d f) m, EAnalysis d f, RecursiveWhole t f, Traversable f, Hashable (f EClassId)) =>t -> m (AddNodeRes d, ENodeTriple d)
+egAddTermSub :: (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f, RecursiveWhole t f, Traversable f, Hashable (f EClassId)) =>t -> m (AddNodeRes d, ENodeTriple d)
 egAddTermSub = go where
   go t = do
     -- unwrap to work with the functor layer
@@ -395,7 +396,7 @@ egAddTermSub = go where
 
 -- | Adds a term (recursively) to the graph. If already in the graph, returns 'ChangedNo' and existing class id. Otherwise
 -- returns 'ChangedYes' and a new class id.
-egAddTerm :: (Alternative m, MonadState (EGraph d f) m, EAnalysis d f, RecursiveWhole t f, Traversable f, Hashable (f EClassId)) => t -> m (Changed, EClassId)
+egAddTerm :: (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f, RecursiveWhole t f, Traversable f, Hashable (f EClassId)) => t -> m (Changed, EClassId)
 egAddTerm t = fmap (\(AddNodeRes c _, ENodeTriple _ x _) -> (c, x)) (egAddTermSub t)
 
 -- | Merges two classes:
@@ -585,14 +586,14 @@ egAnalyzeTerm k = do
     let anaTerm = fmap lookupAnalysis term
     pure (eaMake anaTerm)
 
-egReanalyzeRounds :: (Alternative m, MonadState (EGraph d f) m, Functor f, EAnalysis d f) => m ()
+egReanalyzeRounds :: (EAnalysisHook m d f, MonadState (EGraph d f) m, Functor f, EAnalysis d f) => m ()
 egReanalyzeRounds = do
   wl <- egTakeAnaWorklist
   unless (ILS.null wl) $ do
     egReanalyzeRound wl
     egReanalyzeRounds
 
-egReanalyzeRound :: (Alternative m, MonadState (EGraph d f) m, Functor f, EAnalysis d f) =>  AnalysisWorklist -> m ()
+egReanalyzeRound :: (EAnalysisHook m d f, MonadState (EGraph d f) m, Functor f, EAnalysis d f) =>  AnalysisWorklist -> m ()
 egReanalyzeRound wl = do
     origHc <- gets egHashCons
     let classReana = ILM.fromListWith ILS.union [ (ILM.partialLookup c origHc, ILS.singleton c) | c <- ILS.toList wl ]
@@ -614,7 +615,7 @@ egAddAnalysis anaClass newData = do
     modify' (\eg -> eg { egClassMap = ILM.insert anaClass classData' (egClassMap eg), egAnaWorklist = addNewDirty (egAnaWorklist eg) })
 
 -- | Rebuilds the 'EGraph' after merging to allow adding more terms. (Always safe to call.)
-egRebuild1 :: (Alternative m, MonadState (EGraph d f) m, EAnalysis d f, Traversable f, Hashable (f EClassId)) => m (IntLikeMultiMap EClassId EClassId)
+egRebuild1 :: (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f, Traversable f, Hashable (f EClassId)) => m (IntLikeMultiMap EClassId EClassId)
 egRebuild1 = goRec where
   goRec = do
     -- Note the existing hashcons
@@ -636,7 +637,7 @@ egRebuild1 = goRec where
         goNodeRounds origHc mergedTc newWl newParents
 
 -- | EAnalysis might dirty the graph, just throw a loop at it for now
-egRebuild :: (Alternative m, MonadState (EGraph d f) m, EAnalysis d f, Traversable f, Hashable (f EClassId)) => m (IntLikeMultiMap EClassId EClassId)
+egRebuild :: (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f, Traversable f, Hashable (f EClassId)) => m (IntLikeMultiMap EClassId EClassId)
 egRebuild = loop mempty
   where
     loop acc = do
