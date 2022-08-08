@@ -214,7 +214,8 @@ type WorkList = Seq WorkItem
 -- | When a class analysis is updated, we should rerun the parent nodes
 type AnalysisWorklist = IntLikeSet ENodeId
 newtype Epoch = Epoch Int
-  deriving (Eq, Ord, Show, Hashable, Num, Generic, NFData)
+  deriving newtype (Eq, Ord, Hashable, Num, NFData)
+  deriving stock (Show,Generic)
 
 -- private ctor
 data EGraph d f = EGraph
