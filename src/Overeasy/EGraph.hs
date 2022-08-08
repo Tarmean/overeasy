@@ -752,7 +752,7 @@ egUnionGraphs input1 input2 = runStateT (execStateT (processLoop (S.toList queue
     go n2 = do
         let term = assocPartialLookupByKey n2 (egNodeAssoc eg2)
         term1 <- traverse getMapping term
-        (_changed, ENodeTriple _ cid1 _) <- egAddNodeSubId term1
+        (_changed, cid1) <- egAddFlatTerm term1
         let class2 = lookupClass2 n2
         tryGetMapping class2 >>= \case
             Nothing -> do
@@ -772,10 +772,11 @@ type EClassOut = EClassId
 type MIntersect f d = StateT (EGraph d f) (StateT (IntLikeMap EClassLeft (IntLikeSet EClassOut), IntLikeMap EClassOut EClassRight, HashMap (EClassLeft, EClassRight) EClassOut) Maybe)
 
 -- | Feels very similar to NFA intersection, but I wrote this while very tired so I based it on https://github.com/remysucre/eggegg/blob/main/src/main.rs
-egIntersectGraphs  :: forall f d. (EAnalysisIntersection d, Hashable (f EClassId), EAnalysis d f, Traversable f) => EGraph d f -> EGraph d f -> Maybe (EGraph d f)
+egIntersectGraphs  :: forall f d. (Show (f EClassId), EAnalysisIntersection d, Hashable (f EClassId), EAnalysis d f, Traversable f) => EGraph d f -> EGraph d f -> Maybe (EGraph d f)
 egIntersectGraphs left0 right0 = evalStateT (execStateT (goConstructors *> goOuter)  egNew) (ILM.empty, ILM.empty, HM.empty)
    where
     goOuter = do
+      traceM $ "goOuter start "
       ch <- execWriterT go
       traceM $ "goOuter: " <> show ch
       case ch of
@@ -790,12 +791,11 @@ egIntersectGraphs left0 right0 = evalStateT (execStateT (goConstructors *> goOut
     goConstructors = fmap (const ()) $ execWriterT $ do
        forM_ (HM.toList constantsBoth) $ \(term, (class1, class2)) -> do
                 let termm = fmap undefined term
-                (_, midTriple) <- inEgg (egAddNodeSubId termm)
-                let classMid = entClass midTriple
+                (_, classMid) <- inEgg (egAddFlatTerm termm)
                 insertMid class1 classMid
                 setRight classMid class2
                 tryInsertBack class1 class2 classMid
-           
+
     go :: WriterT Changed (MIntersect f d) ()
     go = do
        forM_ (assocToList (egNodeAssoc left0)) $ \(node1,term1) -> do
@@ -810,9 +810,9 @@ egIntersectGraphs left0 right0 = evalStateT (execStateT (goConstructors *> goOut
                       Nothing -> pure ()
                       Just node2 -> do
                         let class2 = lookupClass2 node2
-                        (isNew, midTriple) <- inEgg (egAddNodeSubId termm)
+                        (isNew, classMid) <- inEgg (egAddFlatTerm termm)
+                        traceM ("Add term " <> show term1 <> ", " <> show (class1, class2, isNew) <> ", " <> show classMid)
                         tell isNew
-                        let classMid = entClass midTriple
                         insertMid class1 classMid
                         setRight classMid class2
                         tryInsertBack class1 class2 classMid
