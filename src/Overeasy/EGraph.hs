@@ -237,8 +237,7 @@ egIncEpoch = modify' $ \s -> s { egEpoch = egEpoch s + 1 }
 
 bumpAnalysisEpoch :: MonadState (EGraph d f) m => EClassId -> m ()
 bumpAnalysisEpoch cid = do
-  undefined
-  -- modify' $ \s -> s { egAnaTimestamps = ILM.alter add (egEpoch s) s }
+  modify' $ \s -> s { egAnaTimestamps = ILM.alter add (egEpoch s) (egAnaTimestamps s) }
    where
      add  Nothing = Just (ILS.singleton cid)
      add (Just s) = Just (ILS.insert cid s)

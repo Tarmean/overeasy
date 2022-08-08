@@ -22,6 +22,8 @@ data EDiff o f = EDiff {
   ediff_analysis :: IntLikeMap EClassId o,
   ediff_new_nodes :: HM.HashMap (f EClassId) (Maybe EClassId)
  }
+deriving instance (Eq o, Eq (f EClassId)) => Eq (EDiff o f)
+deriving instance (Show o, Show (f EClassId)) => Show (EDiff o f)
 
 
 type Base = EGraph
