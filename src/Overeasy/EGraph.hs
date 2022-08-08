@@ -361,8 +361,12 @@ egAddNodeSubId fc = do
           eg' = eg { egNodeSource = nodeSource', egClassSource = classSource', egEquivFind = ef', egNodeAssoc = assoc', egHashCons = hc', egClassMap = classMap' }
       in ((ChangedYes, ENodeTriple n x d), eg')
 
-egAddFlatTerm :: (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f, Functor f, Foldable f, Hashable (f EClassId)) =>  f EClassId -> m (Changed, EClassId)
+egAddFlatTerm :: (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f, Traversable f, Hashable (f EClassId)) =>  f EClassId -> m (Changed, EClassId)
 egAddFlatTerm f = do
+    mf <- egCanonicalize f
+    f <- case mf of
+       Nothing -> error "egAddFlatTerm: Canonicalize failed"
+       Just f' -> pure f'
     (change, trip) <- egAddNodeSubId f
     let n = entNode trip
     let children = F.toList f
