@@ -815,7 +815,6 @@ egIntersectGraphs left0 right0 = evalStateT (execStateT (goConstructors *> goOut
                       Just node2 -> do
                         let class2 = lookupClass2 node2
                         (isNew, classMid) <- inEgg (egAddFlatTerm termm)
-                        traceM ("Add term " <> show term1 <> ", " <> show (class1, class2, isNew) <> ", " <> show classMid)
                         tell isNew
                         insertMid class1 classMid
                         setRight classMid class2
