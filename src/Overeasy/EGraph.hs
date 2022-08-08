@@ -17,6 +17,7 @@ module Overeasy.EGraph
   , EClassInfo (..)
   , EAnalysisChange(..)
   , EGraph
+  , Epoch(..)
   , WorkItem
   , WorkList
   , egClassSource
@@ -47,6 +48,8 @@ module Overeasy.EGraph
   , egRebuild
   , egCanCompact
   , egCompact
+  , egEpoch
+  , egAnaTimestamps
   ) where
 
 import Debug.Trace (traceM)
@@ -85,7 +88,6 @@ import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import Data.Maybe (fromJust)
 import Control.Monad.State (MonadState)
-
 
 -- | An opaque class id
 newtype EClassId = EClassId { unEClassId :: Int }
@@ -211,6 +213,8 @@ type WorkItem = IntLikeSet EClassId
 type WorkList = Seq WorkItem
 -- | When a class analysis is updated, we should rerun the parent nodes
 type AnalysisWorklist = IntLikeSet ENodeId
+newtype Epoch = Epoch Int
+  deriving (Eq, Ord, Show, Hashable, Num, Generic, NFData)
 
 -- private ctor
 data EGraph d f = EGraph
@@ -223,7 +227,21 @@ data EGraph d f = EGraph
   , egHashCons :: !(IntLikeMap ENodeId EClassId)
   , egWorkList :: !WorkList
   , egAnaWorklist :: !AnalysisWorklist
+  , egAnaTimestamps :: !(IntLikeMap Epoch (IntLikeSet EClassId))
+  , egEpoch :: Epoch
   } deriving stock (Generic)
+egGetEpoch :: MonadState (EGraph d f) m => m Epoch
+egGetEpoch = gets egEpoch
+egIncEpoch :: MonadState (EGraph d f) m => m ()
+egIncEpoch = modify' $ \s -> s { egEpoch = egEpoch s + 1 }
+
+bumpAnalysisEpoch :: MonadState (EGraph d f) m => EClassId -> m ()
+bumpAnalysisEpoch cid = do
+  undefined
+  -- modify' $ \s -> s { egAnaTimestamps = ILM.alter add (egEpoch s) s }
+   where
+     add  Nothing = Just (ILS.singleton cid)
+     add (Just s) = Just (ILS.insert cid s)
 
 deriving stock instance (Eq d, Eq (f EClassId)) => Eq (EGraph d f)
 deriving stock instance (Show d, Show (f EClassId)) => Show (EGraph d f)
@@ -254,7 +272,7 @@ egFindTerm t eg = foldWholeM (`egFindNode` eg) t
 
 -- | Creates a new 'EGraph'
 egNew :: EGraph d f
-egNew = EGraph (sourceNew (EClassId 0)) (sourceNew (ENodeId 0)) efNew ILM.empty ILS.empty assocNew ILM.empty Empty ILS.empty
+egNew = EGraph (sourceNew (EClassId 0)) (sourceNew (ENodeId 0)) efNew ILM.empty ILS.empty assocNew ILM.empty Empty ILS.empty ILM.empty 0
 
 -- | Yields all root classes
 egClasses :: MonadState (EGraph d f) m => m [EClassId]
@@ -321,11 +339,12 @@ egAddNodeSub fcd = do
           eg' = eg { egNodeSource = nodeSource', egClassSource = classSource', egEquivFind = ef', egNodeAssoc = assoc', egHashCons = hc', egClassMap = classMap' }
       in ((ChangedYes, ENodeTriple n x d), eg')
 
-postAddNodeHook :: (EAnalysisHook m d f, EAnalysis d f) => m (Changed, ENodeTriple d) -> m (Changed, ENodeTriple d)
+postAddNodeHook :: (MonadState (EGraph d f) m, EAnalysisHook m d f, EAnalysis d f) => m (Changed, ENodeTriple d) -> m (Changed, ENodeTriple d)
 postAddNodeHook m = do
      (c, nt) <- m
      if c == ChangedYes
        then do
+         bumpAnalysisEpoch (entClass nt)
          eHook (entClass nt)
          pure (c, nt)
        else pure (c, nt)
@@ -624,6 +643,7 @@ egReanalyzeRound wl = do
     forM_ (ILM.toList classReana) $ \(clazz, reanaTerms) -> do
         o <- mapM (egAnalyzeTerm) (ILS.toList reanaTerms)
         egAddAnalysis clazz o
+        bumpAnalysisEpoch clazz
         eHook clazz
 egAddAnalysis :: (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f) => EClassId -> [d] -> m ()
 egAddAnalysis anaClass newData = do
@@ -638,7 +658,7 @@ egAddAnalysis anaClass newData = do
 
       classData' = classData { eciData = joined }
     modify' (\eg -> eg { egClassMap = ILM.insert anaClass classData' (egClassMap eg), egAnaWorklist = addNewDirty (egAnaWorklist eg) })
-    when isDirty (eHook anaClass)
+    when isDirty (bumpAnalysisEpoch anaClass *> eHook anaClass)
 
 -- | Rebuilds the 'EGraph' after merging to allow adding more terms. (Always safe to call.)
 egRebuild1 :: (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f, Traversable f, Hashable (f EClassId)) => m (IntLikeMultiMap EClassId EClassId)
@@ -652,7 +672,7 @@ egRebuild1 = goRec where
     tc <- goNodeRounds origHc ILS.empty wl ILS.empty
     -- Now everything is merged so we only have to rewrite the changed parts of the classmap
     (out, rerunHooks) <- egRebuildClassMap tc
-    mapM_ eHook (ILS.toList rerunHooks)
+    mapM_ (\x -> bumpAnalysisEpoch x *> eHook x) (ILS.toList rerunHooks)
     egReanalyzeRounds
     pure out
   goNodeRounds !origHc !tc !wl !parents =
@@ -672,7 +692,7 @@ egRebuild = loop mempty
        keepGoing <- gets egNeedsRebuild
        if keepGoing
        then loop (ILM.union o acc)
-       else pure (ILM.union o acc)
+       else egIncEpoch >> pure (ILM.union o acc)
 
 
 egCanCompact :: EGraph d f -> Bool
