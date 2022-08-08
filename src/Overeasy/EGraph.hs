@@ -788,6 +788,7 @@ egIntersectGraphs left0 right0 = evalStateT (execStateT (goConstructors *> goOut
         ChangedNo -> egCompact
 
     isConstant s = length s == 0
+    constIds = ILS.fromList (fmap fst $ HM.elems constantsBoth)
     constants1 = HM.fromList [(fmap undefined cons, lookupClass1 nid1) | (nid1, cons) <- assocToList (egNodeAssoc left0), isConstant cons]
     constants2 = HM.fromList [(cons, lookupClass2 nid2) | (nid2, cons) <- assocToList (egNodeAssoc right0), isConstant cons]
     constantsBoth = HM.intersectionWith (,) constants1 constants2
@@ -804,21 +805,23 @@ egIntersectGraphs left0 right0 = evalStateT (execStateT (goConstructors *> goOut
     go = do
        forM_ (assocToList (egNodeAssoc left0)) $ \(node1,term1) -> do
           let class1 = lookupClass1 node1
-          termms <- resolveTerm term1
-          forM_ termms $ \termm -> do
-              mterm2 <- traverse lookupRight termm
-              case sequence mterm2 of
-                Nothing -> pure ()
-                Just term2 -> do
-                    case lookupNode2 term2 of
-                      Nothing -> pure ()
-                      Just node2 -> do
-                        let class2 = lookupClass2 node2
-                        (isNew, classMid) <- inEgg (egAddFlatTerm termm)
-                        tell isNew
-                        insertMid class1 classMid
-                        setRight classMid class2
-                        tryInsertBack class1 class2 classMid
+          when (not $ ILS.member class1 constIds) $ do
+              termms <- resolveTerm term1
+              forM_ termms $ \termm -> do
+                  mterm2 <- traverse lookupRight termm
+                  case sequence mterm2 of
+                    Nothing -> pure ()
+                    Just term2 -> do
+                        case lookupNode2 term2 of
+                          Nothing -> pure ()
+                          Just node2 -> do
+                            let class2 = lookupClass2 node2
+                            (isNew, classMid) <- inEgg (egAddFlatTerm termm)
+                            traceM ("Add term " <> show term1 <> ", " <> show (class1, class2, isNew) <> ", " <> show classMid)
+                            tell isNew
+                            insertMid class1 classMid
+                            setRight classMid class2
+                            tryInsertBack class1 class2 classMid
 
     insertMid :: EClassLeft -> EClassOut -> WriterT Changed (MIntersect f d) ()
     insertMid class1 classMid = do
