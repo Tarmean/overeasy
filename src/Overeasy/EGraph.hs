@@ -49,6 +49,7 @@ module Overeasy.EGraph
   , egCompact
   ) where
 
+import Debug.Trace (traceM)
 import Control.DeepSeq (NFData)
 import Control.Monad (unless, forM_, MonadPlus(mzero), when)
 import Control.Monad.State.Strict (gets, modify', state, StateT(..), execStateT, evalStateT)
@@ -772,14 +773,29 @@ type MIntersect f d = StateT (EGraph d f) (StateT (IntLikeMap EClassLeft (IntLik
 
 -- | Feels very similar to NFA intersection, but I wrote this while very tired so I based it on https://github.com/remysucre/eggegg/blob/main/src/main.rs
 egIntersectGraphs  :: forall f d. (EAnalysisIntersection d, Hashable (f EClassId), EAnalysis d f, Traversable f) => EGraph d f -> EGraph d f -> Maybe (EGraph d f)
-egIntersectGraphs left0 right0 = evalStateT (execStateT goOuter  egNew) (ILM.empty, ILM.empty, HM.empty)
+egIntersectGraphs left0 right0 = evalStateT (execStateT (goConstructors *> goOuter)  egNew) (ILM.empty, ILM.empty, HM.empty)
    where
     goOuter = do
       ch <- execWriterT go
+      traceM $ "goOuter: " <> show ch
       case ch of
         ChangedYes -> goOuter
         ChangedNo -> egCompact
 
+    isConstant s = length s == 0
+    constants1 = HM.fromList [(fmap undefined cons, lookupClass1 nid1) | (nid1, cons) <- assocToList (egNodeAssoc left0), isConstant cons]
+    constants2 = HM.fromList [(cons, lookupClass2 nid2) | (nid2, cons) <- assocToList (egNodeAssoc right0), isConstant cons]
+    constantsBoth = HM.intersectionWith (,) constants1 constants2
+    goConstructors :: MIntersect f d ()
+    goConstructors = fmap (const ()) $ execWriterT $ do
+       forM_ (HM.toList constantsBoth) $ \(term, (class1, class2)) -> do
+                let termm = fmap undefined term
+                (_, midTriple) <- inEgg (egAddNodeSubId termm)
+                let classMid = entClass midTriple
+                insertMid class1 classMid
+                setRight classMid class2
+                tryInsertBack class1 class2 classMid
+           
     go :: WriterT Changed (MIntersect f d) ()
     go = do
        forM_ (assocToList (egNodeAssoc left0)) $ \(node1,term1) -> do
@@ -828,7 +844,7 @@ egIntersectGraphs left0 right0 = evalStateT (execStateT goOuter  egNew) (ILM.emp
     inEgg = lift
     lookupMid :: EClassLeft -> WriterT Changed (MIntersect f d) [EClassOut]
     lookupMid cl = lift $ lift $ gets (ILS.toList . ILM.findWithDefault ILS.empty cl . fst3)
-    resolveTerm :: f EClassLeft -> WriterT Changed (MIntersect f d) [f EClassOut]
+    resolveTerm :: f EClassOut -> WriterT Changed (MIntersect f d) [f EClassOut]
     resolveTerm term = do
         classes' <- traverse lookupMid term
         pure (sequence classes')
