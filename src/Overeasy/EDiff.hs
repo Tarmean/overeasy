@@ -160,7 +160,7 @@ diffMerges :: Base d f -> New d f -> IntLikeMap EClassId (IntLikeSet EClassId)
 diffMerges base new = deadByRoot
   where
     newlyDead = ILS.difference (egDeadClasses new) (egDeadClasses base)
-    lookupRoot cls = efFindRoot cls (egEquivFind base)
+    lookupRoot cls = efFindRoot cls (egEquivFind new)
     deadByRoot = ILM.mapWithKey (\k v -> ILS.insert k v) $ ILM.fromListWith (<>) $ do
       cls <- ILS.toList newlyDead
       Just root <- [lookupRoot cls]

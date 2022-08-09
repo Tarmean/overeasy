@@ -19,7 +19,6 @@ data Changed = ChangedNo | ChangedYes
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (Hashable, NFData)
 
-class MonadEGraph d f m | m -> d f where
 
 instance Semigroup Changed where
   c1 <> c2 =
