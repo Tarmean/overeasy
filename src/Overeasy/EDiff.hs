@@ -4,7 +4,7 @@
 -- - Apply changes to base graph
 module Overeasy.EDiff where
 import Data.Hashable
-import Data.Coerce (Coercible)
+import Data.Coerce (Coercible,coerce)
 import Overeasy.EGraph
 import Overeasy.Assoc
 import Overeasy.EquivFind
@@ -14,6 +14,8 @@ import qualified IntLike.Set as ILS
 import qualified IntLike.Map as ILM
 import Control.Monad (MonadPlus, forM_)
 import Control.Monad.Trans.State.Strict (execStateT)
+import GHC.Stack
+import Data.Maybe (fromMaybe)
 
 import qualified Data.HashMap.Strict as HM
 
@@ -25,6 +27,8 @@ data EDiff o f = EDiff {
 deriving instance (Eq o, Eq (f EClassId)) => Eq (EDiff o f)
 deriving instance (Show o, Show (f EClassId)) => Show (EDiff o f)
 
+yankILM :: (Coercible o Int, HasCallStack)  => o -> IntLikeMap o a -> a
+yankILM o m = fromMaybe (error $ "yank: no such key " <> show (coerce o :: Int)) (ILM.lookup (coerce o) m)
 
 type Base = EGraph
 type New = EGraph
@@ -74,7 +78,7 @@ type Broadcast = IntLikeMap EClassId (IntLikeSet EClassId)
 toBroadcastMap :: IntLikeMap EClassId (IntLikeSet EClassId) -> IntLikeMap EClassId (IntLikeSet EClassId) -> Broadcast
 toBroadcastMap fullJoins intersectedJoins = ILM.fromListWith (<>) $ do
     newRoot <- ILM.keys intersectedJoins
-    let oldRoot = ILM.partialLookup newRoot backMap
+    let oldRoot = yankILM newRoot backMap
     return (oldRoot, ILS.singleton newRoot)
   where
     backMap = ILM.fromList [(y,x) | (x,ys) <- ILM.toList fullJoins, y <- ILS.toList ys]
@@ -83,7 +87,7 @@ toBroadcastMap fullJoins intersectedJoins = ILM.fromListWith (<>) $ do
 broadcastMap :: IntLikeMap EClassId a -> Broadcast -> IntLikeMap EClassId a
 broadcastMap oldMap broadcast = ILM.fromList $ do
     (oldRoot, value) <- ILM.toList oldMap
-    newRoot <- ILS.toList (ILM.partialLookup oldRoot broadcast)
+    newRoot <- ILS.toList (yankILM oldRoot broadcast)
     return (newRoot, value)
 
 type JoinMap = IntLikeMap EClassId (IntLikeSet EClassId)
@@ -121,7 +125,7 @@ alignDiffs a b = go ILS.empty mempty (ILS.toList $ mconcat $ ILM.elems a)
     go seen acc (x:xs) 
       | ILS.member x seen = go seen acc xs
       | Just bR <- ILM.lookup x toRootB
-      = let common = ILS.intersection (ILM.partialLookup x a) (ILM.partialLookup bR b)
+      = let common = ILS.intersection (yankILM x a) (yankILM bR b)
         in go (ILS.union common seen) (ILM.insert x common acc) xs
       | otherwise = go seen acc xs
 
@@ -142,8 +146,8 @@ diffAnalysis base new = ILM.fromList $ do
   where
     oldEpoch = egEpoch base
     (_, newerAnalysis) = ILM.split (oldEpoch-1) (egAnaTimestamps new)
-    lookupNewAnalysis cls = eciData $ ILM.partialLookup cls (egClassMap new)
-    lookupOldAnalysis cls = eciData $ ILM.partialLookup cls (egClassMap base)
+    lookupNewAnalysis cls = eciData $ yankILM cls (egClassMap new)
+    lookupOldAnalysis cls = eciData $ yankILM cls (egClassMap base)
 
 toCanonSet :: (Coercible a Int) => EquivFind a -> IntLikeSet a -> IntLikeSet a
 toCanonSet ef eqs = ILS.map (\i -> efLookupRoot i ef) eqs
