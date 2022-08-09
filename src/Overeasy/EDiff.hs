@@ -87,7 +87,7 @@ toBroadcastMap fullJoins intersectedJoins = ILM.fromListWith (<>) $ do
 broadcastMap :: IntLikeMap EClassId a -> Broadcast -> IntLikeMap EClassId a
 broadcastMap oldMap broadcast = ILM.fromList $ do
     (oldRoot, value) <- ILM.toList oldMap
-    newRoot <- ILS.toList (yankILM oldRoot broadcast)
+    newRoot <- ILS.toList (fromMaybe ILS.empty $ ILM.lookup oldRoot broadcast)
     return (newRoot, value)
 
 type JoinMap = IntLikeMap EClassId (IntLikeSet EClassId)
