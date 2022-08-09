@@ -49,7 +49,7 @@ threeWayDiff base new = EDiff (diffMerges base new) (diffAnalysis base new) (HM.
 
 
 mergeDiffs :: (Traversable f, DeltaAnalysis d, Hashable (f EClassId)) => EDiff d f -> EDiff d f -> EDiff d f
-mergeDiffs l r = EDiff joins analysis newNodes
+mergeDiffs l r = EDiff (ILM.filter ((>1) . ILS.size) joins) analysis newNodes
   where
     joins = alignDiffs (ediff_joins l) (ediff_joins r)
     broadcastl = toBroadcastMap (ediff_joins l) joins
