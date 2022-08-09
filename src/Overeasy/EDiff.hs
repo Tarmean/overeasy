@@ -113,7 +113,7 @@ alignNewNodes joins l r  = HM.intersectionWith (\a b -> if a == b then a else No
     rootMap = ILM.fromList [(y,x) | (x,ys) <- ILM.toList joins, y <- ILS.toList ys]
 
 alignAnalysis :: (DeltaAnalysis d) => Broadcast -> EDiff d f -> Broadcast -> EDiff d f -> IntLikeMap EClassId d
-alignAnalysis broadcastl l broadcastr r = ILM.intersectionWithMaybe (const deltaAnalysis) bl br
+alignAnalysis broadcastl l broadcastr r = ILM.intersectionWithMaybe (const intersectAnalysis) bl br
   where
     bl = broadcastMap (ediff_analysis l) broadcastl
     br = broadcastMap (ediff_analysis r) broadcastr
