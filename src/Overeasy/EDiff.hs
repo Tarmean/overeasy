@@ -119,13 +119,13 @@ alignAnalysis broadcastl l broadcastr r = ILM.intersectionWithMaybe (const delta
     br = broadcastMap (ediff_analysis r) broadcastr
 
 alignDiffs :: IntLikeMap EClassId (IntLikeSet EClassId) -> IntLikeMap EClassId (IntLikeSet EClassId) -> IntLikeMap EClassId (IntLikeSet EClassId)
-alignDiffs a b = go ILS.empty mempty (ILS.toList $ mconcat $ ILM.elems a)
+alignDiffs a b = go ILS.empty mempty [(k,v) | (k,vs) <-  ILM.toList a, v <- ILS.toList vs]
   where
     go _seen acc [] = acc
-    go seen acc (x:xs) 
+    go seen acc ((rx, x):xs) 
       | ILS.member x seen = go seen acc xs
       | Just bR <- ILM.lookup x toRootB
-      = let common = ILS.intersection (yankILM x a) (yankILM bR b)
+      = let common = ILS.intersection (yankILM rx a) (yankILM bR b)
         in go (ILS.union common seen) (ILM.insert x common acc) xs
       | otherwise = go seen acc xs
 
