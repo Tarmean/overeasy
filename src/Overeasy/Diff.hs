@@ -36,22 +36,21 @@ instance Coercible a Int => Lattice (Merges a) where
         go _seen acc [] = acc
         go seen acc ((rx, x):xs) 
           | ILS.member x seen = go seen acc xs
-          | Just bR <- ILM.lookup x toRootB
-          = let common = ILS.intersection (yankILM rx a) (yankILM bR b)
+          | Just bR <- efLookupRootAll x efB
+          = let common = ILS.intersection (ILM.partialLookup rx a) (ILM.partialLookup bR b)
             in go (ILS.union common seen) (ILM.insert x common acc) xs
           | otherwise = go seen acc xs
         a = efFwd efA
         b = efFwd efB
-        toRootB = efBwd efB
     lunion (Merges a) (Merges b) = case runState (efMergeSets $ ILM.elems $ efFwd a) b of
         (Nothing, _) -> Nothing
         (Just _, o) -> Just (Merges o)
     ltop = Merges efNew
 instance (Coercible a Int) => Diff (EquivFind a) (Merges a) where
-    diff efA efB = Merges $ efNew -- efUnsafeNew out
+    diff efA efB = Merges $ efUnsafeNew out
       where
         removedRoots = ILM.difference (efFwd efA) (efFwd efB)
-        out = ILM.fromListWith (<>) [(y, ILS.singleton x) | x <- ILM.keys removedRoots, let y = fromMaybe (error "Root not found") (efFindRoot x efB)]
+        out = ILM.fromListWith (<>) [(y, ILS.singleton x) | x <- ILM.keys removedRoots, let y = efFindRootAll x efB]
 
 data MapDiff k d = MapDiff {
   mapDiff :: !(IntLikeMap k d)
@@ -105,16 +104,16 @@ instance  (Diff d i, Lattice i, Eq i) => Diff (EGraph d f) (EDiff i) where
             pure (k, diffOut)
         oldEpoch = egEpoch base
         (_, newerAnalysis) = ILM.split (oldEpoch-1) (egAnaTimestamps new)
-        lookupNewAnalysis cls = eciData $ yankILM (canonNew cls) (egClassMap new)
+        lookupNewAnalysis cls = eciData $ ILM.partialLookup (canonNew cls) (egClassMap new)
         lookupOldAnalysis cls = fmap eciData $ ILM.lookup (canonOld cls) (egClassMap base)
-        canonNew x = efLookupRoot x (egEquivFind new)
-        canonOld x = efLookupRoot x (egEquivFind base)
+        canonNew x = efFindRootAll x (egEquivFind new)
+        canonOld x = efFindRootAll x (egEquivFind base)
 instance (Eq i, EAnalysis d f, DiffApply d i) => DiffApply (EGraph d f) (EDiff i) where
     applyDiff (EDiff (Merges merges) (MapDiff analysis)) e = flip execStateT e $ do
         mapM_ egMergeMany (ILM.elems (efFwd merges))
         ef <- gets egEquivFind
         let
-          normKey x = efLookupRoot x ef
+          normKey x = efFindRootAll x ef
           normed = ILM.fromList $ map (first normKey) $ ILM.toList analysis
         forM_ (ILM.toList normed) $ \(k,v) -> do
             old <- egGetAnalysis k
@@ -124,9 +123,7 @@ instance (Eq i, EAnalysis d f, DiffApply d i) => DiffApply (EGraph d f) (EDiff i
               Just n -> egAddAnalysis k [n]
 
 toCanonSet :: (Coercible a Int) => EquivFind a -> IntLikeSet a -> IntLikeSet a
-toCanonSet ef eqs = ILS.map (\i -> efLookupRoot i ef) eqs
+toCanonSet ef eqs = ILS.map (\i -> efFindRootAll i ef) eqs
 
 
 
-yankILM :: (Coercible o Int, HasCallStack)  => o -> IntLikeMap o a -> a
-yankILM o m = fromMaybe (error $ "yank: no such key " <> show (coerce o :: Int)) (ILM.lookup (coerce o) m)
