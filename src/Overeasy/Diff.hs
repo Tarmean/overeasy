@@ -91,13 +91,14 @@ instance (Lattice d) => Lattice (EDiff d) where
     ltop = EDiff ltop ltop
 
 
-instance  (Show d, Show (f EClassId), Diff d i, Lattice i, Lattice d, Eq i) => Diff (EGraph d f) (EDiff i) where
+instance  (Diff d i, Lattice i, Lattice d, Eq i) => Diff (EGraph d f) (EDiff i) where
     diff base new = EDiff (diff (egEquivFind base) (egEquivFind new)) (MapDiff diffAnalysis)
       where
         diffAnalysis = ILM.fromList $ do
-            traceM (show ("base", base, "new", new))
             ks <- ILM.elems newerAnalysis
             k <- ILS.toList (toCanonSet (egEquivFind new) ks)
+            -- check node is life
+            guard $ ILM.member k (efBwd (egEquivFind new))
             traceM (show k)
             let newAna = lookupNewAnalysis k
                 oldAna = lookupOldAnalysis k
