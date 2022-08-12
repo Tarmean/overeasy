@@ -56,8 +56,8 @@ data MapDiff k d = MapDiff {
   mapDiff :: !(IntLikeMap k d)
   } deriving (Eq, Show, Generic)
 instance (Coercible k Int, Lattice d) => Lattice (MapDiff k d) where
-    lintersect (MapDiff a) (MapDiff b) = Just $ MapDiff $ ILM.unionWithMaybe (const lintersect) a b
-    lunion (MapDiff da) (MapDiff db) = MapDiff <$> ILM.intersectionWithMaybeA step da db
+    lintersect (MapDiff a) (MapDiff b) = Just $ MapDiff $ ILM.intersectionWithMaybe (const lintersect) a b
+    lunion (MapDiff da) (MapDiff db) = MapDiff <$> ILM.unionWithMaybeA step da db
       where
         step _ a b = fmap Just (lunion a b)
     ltop = MapDiff mempty
