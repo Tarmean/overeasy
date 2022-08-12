@@ -735,7 +735,8 @@ egCompactInc eg =
       -- remove dead classes from hashcons
       hc' = foldl' (flip ILM.delete) hc (ILM.keys nodeReplacements)
       -- remove dead classes from unionfind
-      (_, ef') = efCompactInc ef
+      -- (_, ef') = efCompactInc ef
+      ef' = ef
       -- remove dead classes from classmap
       cm' = foldl' (flip ILM.delete) cm (ILS.toList deadClasses)
       -- rewrite dead parent nodes in classmap
