@@ -50,7 +50,7 @@ instance Coercible a Int => Lattice (Merges a) where
 instance (Coercible a Int) => Diff (EquivFind a) (Merges a) where
     diff efA efB = Merges $ efUnsafeNew out
       where
-        removedRoots = ILM.difference (efBwd efA) (efBwd efB)
+        removedRoots = ILM.difference (efFwd efA) (efFwd efB)
         out = ILM.fromListWith (<>) [(y, ILS.singleton x) | x <- ILM.keys removedRoots, let y = fromMaybe (error "Root not found") (efFindRoot x efB)]
 
 data MapDiff k d = MapDiff {

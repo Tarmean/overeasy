@@ -244,6 +244,7 @@ egIncEpoch = modify' $ \s -> s { egEpoch = egEpoch s + 1 }
 
 bumpAnalysisEpoch :: MonadState (EGraph d f) m => EClassId -> m ()
 bumpAnalysisEpoch cid = do
+  norm <- gets (efLookupRoot cid . egEquivFind)
   modify' $ \s -> s { egAnaTimestamps = ILM.alter add (egEpoch s) (egAnaTimestamps s) }
    where
      add  Nothing = Just (ILS.singleton cid)
@@ -350,8 +351,8 @@ postAddNodeHook m = do
      (c, nt) <- m
      if c == ChangedYes
        then do
-         bumpAnalysisEpoch (entClass nt)
          eHook (entClass nt)
+         bumpAnalysisEpoch (entClass nt)
          pure (c, nt)
        else pure (c, nt)
 
@@ -649,8 +650,8 @@ egReanalyzeRound wl = do
     forM_ (ILM.toList classReana) $ \(clazz, reanaTerms) -> do
         o <- mapM (egAnalyzeTerm) (ILS.toList reanaTerms)
         egAddAnalysis clazz o
-        bumpAnalysisEpoch clazz
         eHook clazz
+        bumpAnalysisEpoch clazz
 egAddAnalysis :: (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f) => EClassId -> [d] -> m ()
 egAddAnalysis anaClass newData = do
     classMap <- gets egClassMap
@@ -664,7 +665,7 @@ egAddAnalysis anaClass newData = do
 
       classData' = classData { eciData = joined }
     modify' (\eg -> eg { egClassMap = ILM.insert anaClass classData' (egClassMap eg), egAnaWorklist = addNewDirty (egAnaWorklist eg) })
-    when isDirty (bumpAnalysisEpoch anaClass *> eHook anaClass)
+    when isDirty (eHook anaClass *> bumpAnalysisEpoch anaClass)
 
 -- | Rebuilds the 'EGraph' after merging to allow adding more terms. (Always safe to call.)
 egRebuild1 :: (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f, Traversable f, Hashable (f EClassId)) => m (IntLikeMultiMap EClassId EClassId)
@@ -678,7 +679,7 @@ egRebuild1 = goRec where
     tc <- goNodeRounds origHc ILS.empty wl ILS.empty
     -- Now everything is merged so we only have to rewrite the changed parts of the classmap
     (out, rerunHooks) <- egRebuildClassMap tc
-    mapM_ (\x -> bumpAnalysisEpoch x *> eHook x) (ILS.toList rerunHooks)
+    mapM_ (\x -> eHook x *> bumpAnalysisEpoch x) (ILS.toList rerunHooks)
     egReanalyzeRounds
     pure out
   goNodeRounds !origHc !tc !wl !parents =
