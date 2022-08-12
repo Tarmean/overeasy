@@ -10,9 +10,10 @@ import Overeasy.EGraph (EClassId(..), EGraph(..), Epoch(..), eciData, egMergeMan
 import Data.Coerce (Coercible, coerce)
 import GHC.Stack (HasCallStack)
 import Data.Maybe (fromMaybe)
-import Control.Monad.Trans.State.Strict (runState, execStateT)
+import Control.Monad.Trans.State.Strict (runState, execStateT, gets)
 import Control.Monad (forM_, guard)
 import Control.Applicative (empty)
+import Data.Bifunctor (first)
 
 
 
@@ -47,7 +48,7 @@ instance Coercible a Int => Lattice (Merges a) where
         (Just _, o) -> Just (Merges o)
     ltop = Merges efNew
 instance (Coercible a Int) => Diff (EquivFind a) (Merges a) where
-    diff efA efB = Merges $ efUnsafeNew out
+    diff efA efB = Merges $ efNew -- efUnsafeNew out
       where
         removedRoots = ILM.difference (efFwd efA) (efFwd efB)
         out = ILM.fromListWith (<>) [(y, ILS.singleton x) | x <- ILM.keys removedRoots, let y = fromMaybe (error "Root not found") (efFindRoot x efB)]
@@ -80,7 +81,7 @@ data EDiff d = EDiff {
 
 instance (Lattice d) => Lattice (EDiff d) where
     lunion (EDiff la lb ) (EDiff ra rb) = case (lunion la ra , lunion lb rb) of
-        (Just a, Just b) -> Just $ EDiff a (applyProduct a b)
+        (Just a, Just b) -> Just $ EDiff a b --(applyProduct a b)
         (Nothing, Just b) -> Just $ EDiff ltop b
         (Just a, Nothing) -> Just $ EDiff a ltop
         _ -> Nothing
@@ -111,7 +112,11 @@ instance  (Diff d i, Lattice i, Eq i) => Diff (EGraph d f) (EDiff i) where
 instance (Eq i, EAnalysis d f, DiffApply d i) => DiffApply (EGraph d f) (EDiff i) where
     applyDiff (EDiff (Merges merges) (MapDiff analysis)) e = flip execStateT e $ do
         mapM_ egMergeMany (ILM.elems (efFwd merges))
-        forM_ (ILM.toList analysis) $ \(k,v) -> do
+        ef <- gets egEquivFind
+        let
+          normKey x = efLookupRoot x ef
+          normed = ILM.fromList $ map (first normKey) $ ILM.toList analysis
+        forM_ (ILM.toList normed) $ \(k,v) -> do
             old <- egGetAnalysis k
             let new = applyDiff v old
             case new of
