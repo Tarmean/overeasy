@@ -57,7 +57,7 @@ data EquivFind x = EquivFind
   { efFwd :: !(IntLikeMap x (IntLikeSet x))
   , efBwd :: !(IntLikeMap x x)
   , efBwdAll :: !(IntLikeMap x x)
-  } deriving stock (Eq, Show, Generic)
+  } deriving stock (Eq, Show, Generic, Ord)
     deriving anyclass (NFData)
 
 efUnsafeNew :: Coercible x Int => (IntLikeMap x (IntLikeSet x)) -> EquivFind x

@@ -10,11 +10,11 @@ packages:
     git: git@github.com:Tarmean/int-like.git
     pantry-tree:
       size: 1134
-      sha256: 786dd8667ddadba6a23a9ad0f319211dd83852bf6bb0b42223dc522e47ad056f
-    commit: 79e475d4154435165027002bfff371b8b6f834c6
+      sha256: 78d807528b82102cb6561c791d396dd89d2603babc6b74e76c2a28db3d1e3d6c
+    commit: 5403d1d699b1ecb09c0362a3fd0ec152fb247e07
   original:
     git: git@github.com:Tarmean/int-like.git
-    commit: 79e475d4154435165027002bfff371b8b6f834c6
+    commit: 5403d1d699b1ecb09c0362a3fd0ec152fb247e07
 - completed:
     name: prop-unit
     version: 0.1.0

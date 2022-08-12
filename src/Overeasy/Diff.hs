@@ -28,7 +28,7 @@ class Lattice d where
 
 
 newtype Merges a = Merges (EquivFind a)
-    deriving (Eq, Show, Generic)
+    deriving (Eq, Show, Generic, Ord)
 
 instance Coercible a Int => Lattice (Merges a) where
     lunion (Merges efA) (Merges efB) = Just $ Merges $ efUnsafeNew $ go ILS.empty mempty [(k,v) | (k,vs) <-  ILM.toList a, v <- ILS.toList vs]
@@ -54,7 +54,7 @@ instance (Coercible a Int) => Diff (EquivFind a) (Merges a) where
 
 data MapDiff k d = MapDiff {
   mapDiff :: !(IntLikeMap k d)
-  } deriving (Eq, Show, Generic)
+  } deriving (Eq, Show, Generic, Ord)
 instance (Coercible k Int, Lattice d) => Lattice (MapDiff k d) where
     lintersect (MapDiff a) (MapDiff b) = Just $ MapDiff $ ILM.intersectionWithMaybe (const lintersect) a b
     lunion (MapDiff da) (MapDiff db) = MapDiff <$> ILM.unionWithMaybeA step da db
@@ -76,7 +76,7 @@ instance Coercible Int k => SemiDirectProduct (Merges k) (MapDiff k d) where
 data EDiff d = EDiff {
     eMerges :: Merges EClassId,
     eAna :: MapDiff EClassId d
-  } deriving (Eq, Show, Generic)
+  } deriving (Eq, Show, Generic, Ord)
 
 instance (Lattice d) => Lattice (EDiff d) where
     lintersect (EDiff la lb ) (EDiff ra rb) = case (lintersect la ra , lintersect lb rb) of
