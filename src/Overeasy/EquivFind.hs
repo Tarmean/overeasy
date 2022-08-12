@@ -6,6 +6,7 @@ module Overeasy.EquivFind
   ( EquivFind
   , efFwd
   , efBwd
+  , efBwdAll
   , efRootsSize
   , efLeavesSize
   , efTotalSize
