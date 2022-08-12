@@ -13,7 +13,7 @@ import GHC.Stack (HasCallStack)
 import Data.Maybe (fromMaybe)
 import qualified Data.Sequence as Seq
 import Control.Monad.Trans.State.Strict (runState, execStateT)
-import Control.Monad (forM_)
+import Control.Monad (forM_, guard)
 import Control.Applicative (empty)
 
 
@@ -25,6 +25,7 @@ class Diff e d => DiffApply e d where
 class Lattice d where
   lunion :: d -> d -> Maybe d
   lintersect :: d -> d -> Maybe d
+  ltop :: d
 
 
 newtype Merges a = Merges (EquivFind a)
@@ -46,6 +47,7 @@ instance Coercible a Int => Lattice (Merges a) where
     lunion (Merges a) (Merges b) = case runState (efMergeSets $ ILM.elems $ efFwd a) b of
         (Nothing, _) -> Nothing
         (Just _, o) -> Just (Merges o)
+    ltop = Merges efNew
 instance (Coercible a Int) => Diff (EquivFind a) (Merges a) where
     diff efA efB = Merges $ efUnsafeNew out
       where
@@ -60,6 +62,7 @@ instance (Coercible k Int, Lattice d) => Lattice (MapDiff k d) where
     lintersect (MapDiff da) (MapDiff db) = MapDiff <$> ILM.intersectionWithMaybeA step da db
       where
         step _ a b = fmap Just (lintersect a b)
+    ltop = MapDiff mempty
 
 class SemiDirectProduct l r where
     applyProduct :: l -> r -> r
@@ -80,16 +83,14 @@ data EDiff d = EDiff {
 instance (Lattice d) => Lattice (EDiff d) where
     lunion (EDiff la lb ) (EDiff ra rb) = case (lunion la ra , lunion lb rb) of
         (Just a, Just b) -> Just $ EDiff a (applyProduct a b)
-        (Nothing, Just b) -> Just $ EDiff nl b
-        (Just a, Nothing) -> Just $ EDiff a nr
+        (Nothing, Just b) -> Just $ EDiff ltop b
+        (Just a, Nothing) -> Just $ EDiff a ltop
         _ -> Nothing
-        where
-            nl = Merges efNew
-            nr = MapDiff mempty
     lintersect (EDiff la lb) (EDiff ra rb) = EDiff <$> lintersect la ra <*> lintersect lb rb
+    ltop = EDiff ltop ltop
 
 
-instance  (Diff d i, Lattice i) => Diff (EGraph d f) (EDiff i) where
+instance  (Diff d i, Lattice i, Lattice d, Eq i) => Diff (EGraph d f) (EDiff i) where
     diff base new = EDiff (diff (egEquivFind base) (egEquivFind new)) (MapDiff diffAnalysis)
       where
         diffAnalysis = ILM.fromList $ do
@@ -98,12 +99,13 @@ instance  (Diff d i, Lattice i) => Diff (EGraph d f) (EDiff i) where
             let newAna = lookupNewAnalysis k
                 oldAna = lookupOldAnalysis k
                 diffOut = diff oldAna newAna
+            guard $ diffOut /= ltop
             pure (k, diffOut)
         oldEpoch = egEpoch base
         (_, newerAnalysis) = ILM.split (oldEpoch-1) (egAnaTimestamps new)
         lookupNewAnalysis cls = eciData $ yankILM cls (egClassMap new)
-        lookupOldAnalysis cls = eciData $ yankILM cls (egClassMap base)
-instance (EAnalysis d f, DiffApply d i) => DiffApply (EGraph d f) (EDiff i) where
+        lookupOldAnalysis cls = maybe ltop eciData $ ILM.lookup cls (egClassMap base)
+instance (Eq i, Lattice d, EAnalysis d f, DiffApply d i) => DiffApply (EGraph d f) (EDiff i) where
     applyDiff (EDiff (Merges merges) (MapDiff analysis)) e = flip execStateT e $ do
         mapM_ egMergeMany (ILM.elems (efFwd merges))
         forM_ (ILM.toList analysis) $ \(k,v) -> do
