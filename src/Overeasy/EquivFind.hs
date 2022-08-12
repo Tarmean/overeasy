@@ -3,7 +3,7 @@
 -- | A Union-Find implementation using explicit equivalence classes.
 -- We inevitably have to construct these classes so we might as well just do it as we go!
 module Overeasy.EquivFind
-  ( EquivFind
+  ( EquivFind(..)
   , efFwd
   , efBwd
   , efBwdAll
