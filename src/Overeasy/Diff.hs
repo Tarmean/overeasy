@@ -15,6 +15,7 @@ import qualified Data.Sequence as Seq
 import Control.Monad.Trans.State.Strict (runState, execStateT)
 import Control.Monad (forM_, guard)
 import Control.Applicative (empty)
+import Debug.Trace (traceM)
 
 
 
@@ -96,6 +97,7 @@ instance  (Diff d i, Lattice i, Lattice d, Eq i) => Diff (EGraph d f) (EDiff i) 
         diffAnalysis = ILM.fromList $ do
             ks <- ILM.elems newerAnalysis
             k <- ILS.toList (toCanonSet (egEquivFind new) ks)
+            traceM (show (k, ks))
             let newAna = lookupNewAnalysis k
                 oldAna = lookupOldAnalysis k
                 diffOut = diff oldAna newAna
@@ -103,8 +105,10 @@ instance  (Diff d i, Lattice i, Lattice d, Eq i) => Diff (EGraph d f) (EDiff i) 
             pure (k, diffOut)
         oldEpoch = egEpoch base
         (_, newerAnalysis) = ILM.split (oldEpoch-1) (egAnaTimestamps new)
-        lookupNewAnalysis cls = eciData $ yankILM cls (egClassMap new)
-        lookupOldAnalysis cls = maybe ltop eciData $ ILM.lookup cls (egClassMap base)
+        lookupNewAnalysis cls = eciData $ yankILM (canonNew cls) (egClassMap new)
+        lookupOldAnalysis cls = maybe ltop eciData $ ILM.lookup (canonOld cls) (egClassMap base)
+        canonNew x = efLookupRoot x (egEquivFind new)
+        canonOld x = efLookupRoot x (egEquivFind base)
 instance (Eq i, Lattice d, EAnalysis d f, DiffApply d i) => DiffApply (EGraph d f) (EDiff i) where
     applyDiff (EDiff (Merges merges) (MapDiff analysis)) e = flip execStateT e $ do
         mapM_ egMergeMany (ILM.elems (efFwd merges))
