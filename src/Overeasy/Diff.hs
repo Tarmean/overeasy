@@ -13,7 +13,6 @@ import Data.Maybe (fromMaybe)
 import Control.Monad.Trans.State.Strict (runState, execStateT)
 import Control.Monad (forM_, guard)
 import Control.Applicative (empty)
-import Debug.Trace (traceM)
 
 
 
@@ -89,18 +88,18 @@ instance (Lattice d) => Lattice (EDiff d) where
     ltop = EDiff ltop ltop
 
 
-instance  (Diff d i, Lattice i, Lattice d, Eq i, Show i) => Diff (EGraph d f) (EDiff i) where
+instance  (Diff d i, Lattice i, Eq i) => Diff (EGraph d f) (EDiff i) where
     diff base new = EDiff (diff (egEquivFind base) (egEquivFind new)) (MapDiff diffAnalysis)
       where
         diffAnalysis = ILM.fromList $ do
             let ks = mconcat (ILM.elems newerAnalysis)
-            traceM ("diff ana" <> show ks)
+            -- traceM ("diff ana" <> show ks)
             k <- ILS.toList  ks
             guard (ILM.member k (egClassMap base))
             let newAna = lookupNewAnalysis k
                 oldAna = lookupOldAnalysis k
                 diffOut = diff oldAna newAna
-            traceM ("diff " <> show k <> " " <> show diffOut)
+            -- traceM ("diff " <> show k <> " " <> show diffOut)
             guard $ diffOut /= ltop
             pure (k, diffOut)
         oldEpoch = egEpoch base
@@ -109,7 +108,7 @@ instance  (Diff d i, Lattice i, Lattice d, Eq i, Show i) => Diff (EGraph d f) (E
         lookupOldAnalysis cls = eciData $ yankILM (canonOld cls) (egClassMap base)
         canonNew x = efLookupRoot x (egEquivFind new)
         canonOld x = efLookupRoot x (egEquivFind base)
-instance (Eq i, Lattice d, EAnalysis d f, DiffApply d i, Show i) => DiffApply (EGraph d f) (EDiff i) where
+instance (Eq i, EAnalysis d f, DiffApply d i) => DiffApply (EGraph d f) (EDiff i) where
     applyDiff (EDiff (Merges merges) (MapDiff analysis)) e = flip execStateT e $ do
         mapM_ egMergeMany (ILM.elems (efFwd merges))
         forM_ (ILM.toList analysis) $ \(k,v) -> do
