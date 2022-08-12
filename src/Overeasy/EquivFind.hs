@@ -244,7 +244,7 @@ efCompactInc :: Coercible x Int => EquivFind x -> (IntLikeMap x (IntLikeSet x), 
 efCompactInc (EquivFind origFwd origBwd) = finalRes where
   finalRes =
     let (rootMap, fwd') = foldl' go (ILM.empty, origFwd) (ILM.elems origBwd)
-    in (rootMap, EquivFind fwd' origBwd)
+    in (rootMap, EquivFind fwd' ILM.empty)
   go p@(rootMap, fwd) r =
     if ILM.member r rootMap
       then p
