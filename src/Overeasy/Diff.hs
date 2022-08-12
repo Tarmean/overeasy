@@ -91,13 +91,14 @@ instance (Lattice d) => Lattice (EDiff d) where
     ltop = EDiff ltop ltop
 
 
-instance  (Diff d i, Lattice i, Lattice d, Eq i) => Diff (EGraph d f) (EDiff i) where
+instance  (Show d, Show (f EClassId), Diff d i, Lattice i, Lattice d, Eq i) => Diff (EGraph d f) (EDiff i) where
     diff base new = EDiff (diff (egEquivFind base) (egEquivFind new)) (MapDiff diffAnalysis)
       where
         diffAnalysis = ILM.fromList $ do
+            traceM (show ("base", base, "new", new))
             ks <- ILM.elems newerAnalysis
             k <- ILS.toList (toCanonSet (egEquivFind new) ks)
-            traceM (show (k, ks))
+            traceM (show k)
             let newAna = lookupNewAnalysis k
                 oldAna = lookupOldAnalysis k
                 diffOut = diff oldAna newAna
@@ -109,7 +110,7 @@ instance  (Diff d i, Lattice i, Lattice d, Eq i) => Diff (EGraph d f) (EDiff i) 
         lookupOldAnalysis cls = maybe ltop eciData $ ILM.lookup (canonOld cls) (egClassMap base)
         canonNew x = efLookupRoot x (egEquivFind new)
         canonOld x = efLookupRoot x (egEquivFind base)
-instance (Eq i, Lattice d, EAnalysis d f, DiffApply d i) => DiffApply (EGraph d f) (EDiff i) where
+instance (Show d, Show (f EClassId), Eq i, Lattice d, EAnalysis d f, DiffApply d i) => DiffApply (EGraph d f) (EDiff i) where
     applyDiff (EDiff (Merges merges) (MapDiff analysis)) e = flip execStateT e $ do
         mapM_ egMergeMany (ILM.elems (efFwd merges))
         forM_ (ILM.toList analysis) $ \(k,v) -> do
