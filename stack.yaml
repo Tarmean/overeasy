@@ -11,6 +11,6 @@ packages:
 
 extra-deps:
 - git: git@github.com:Tarmean/int-like.git
-  commit: 639281a2891566d6a994e8e07c74e2aa4ef58c87
+  commit: e61f7587f309da03429884fb455f8b18b6fc7665
 - git: git@github.com:ejconlon/prop-unit.git
   commit: 167f919ee66dc2f6f17b9ad952be3921779789ea
