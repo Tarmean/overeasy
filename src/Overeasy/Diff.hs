@@ -22,8 +22,8 @@ class Lattice d => Diff e d | e -> d where
 class Diff e d => DiffApply e d where
   applyDiff :: d -> e -> Maybe e
 class Lattice d where
-  lunion :: d -> d -> Maybe d
   lintersect :: d -> d -> Maybe d
+  lunion :: d -> d -> Maybe d
   ltop :: d
 
 
@@ -31,7 +31,7 @@ newtype Merges a = Merges (EquivFind a)
     deriving (Eq, Show, Generic)
 
 instance Coercible a Int => Lattice (Merges a) where
-    lintersect (Merges efA) (Merges efB) = Just $ Merges $ efUnsafeNew $ go ILS.empty mempty [(k,v) | (k,vs) <-  ILM.toList a, v <- ILS.toList vs]
+    lunion (Merges efA) (Merges efB) = Just $ Merges $ efUnsafeNew $ go ILS.empty mempty [(k,v) | (k,vs) <-  ILM.toList a, v <- ILS.toList vs]
       where
         go _seen acc [] = acc
         go seen acc ((rx, x):xs) 
@@ -42,7 +42,7 @@ instance Coercible a Int => Lattice (Merges a) where
           | otherwise = go seen acc xs
         a = efFwd efA
         b = efFwd efB
-    lunion (Merges a) (Merges b) = case runState (efMergeSets $ ILM.elems $ efFwd a) b of
+    lintersect (Merges a) (Merges b) = case runState (efMergeSets $ ILM.elems $ efFwd a) b of
         (Nothing, _) -> Nothing
         (Just _, o) -> Just (Merges o)
     ltop = Merges efNew
@@ -56,10 +56,10 @@ data MapDiff k d = MapDiff {
   mapDiff :: !(IntLikeMap k d)
   } deriving (Eq, Show, Generic)
 instance (Coercible k Int, Lattice d) => Lattice (MapDiff k d) where
-    lunion (MapDiff a) (MapDiff b) = Just $ MapDiff $ ILM.unionWithMaybe (const lunion) a b
-    lintersect (MapDiff da) (MapDiff db) = MapDiff <$> ILM.intersectionWithMaybeA step da db
+    lintersect (MapDiff a) (MapDiff b) = Just $ MapDiff $ ILM.unionWithMaybe (const lintersect) a b
+    lunion (MapDiff da) (MapDiff db) = MapDiff <$> ILM.intersectionWithMaybeA step da db
       where
-        step _ a b = fmap Just (lintersect a b)
+        step _ a b = fmap Just (lunion a b)
     ltop = MapDiff mempty
 
 class SemiDirectProduct l r where
@@ -79,12 +79,12 @@ data EDiff d = EDiff {
   } deriving (Eq, Show, Generic)
 
 instance (Lattice d) => Lattice (EDiff d) where
-    lunion (EDiff la lb ) (EDiff ra rb) = case (lunion la ra , lunion lb rb) of
+    lintersect (EDiff la lb ) (EDiff ra rb) = case (lintersect la ra , lintersect lb rb) of
         (Just a, Just b) -> Just $ EDiff a b --(applyProduct a b)
         (Nothing, Just b) -> Just $ EDiff ltop b
         (Just a, Nothing) -> Just $ EDiff a ltop
         _ -> Nothing
-    lintersect (EDiff la lb) (EDiff ra rb) = EDiff <$> lintersect la ra <*> lintersect lb rb
+    lunion (EDiff la lb) (EDiff ra rb) = EDiff <$> lunion la ra <*> lunion lb rb
     ltop = EDiff ltop ltop
 
 
