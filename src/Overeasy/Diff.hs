@@ -97,8 +97,6 @@ instance  (Diff d i, Lattice i, Lattice d, Eq i) => Diff (EGraph d f) (EDiff i) 
         diffAnalysis = ILM.fromList $ do
             ks <- ILM.elems newerAnalysis
             k <- ILS.toList (toCanonSet (egEquivFind new) ks)
-            -- check node is life
-            guard $ ILM.member k (efBwd (egEquivFind new))
             traceM (show k)
             let newAna = lookupNewAnalysis k
                 oldAna = lookupOldAnalysis k

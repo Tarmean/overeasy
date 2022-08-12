@@ -742,7 +742,8 @@ egCompactInc eg =
       cm'' = foldl' (flip (ILM.adjust (egCompactParentClass nodeReplacements))) cm' (ILS.toList deadNodeParentClasses)
       -- -- rewrite dead self nodes in classmap
       cm''' = foldl' (flip (ILM.adjust (egCompactSelfClass nodeReplacements))) cm'' (ILS.toList deadNodeSelfClasses)
-  in eg { egEquivFind = ef', egNodeAssoc = assoc', egClassMap = cm''', egHashCons = hc', egDeadClasses = ILS.empty }
+      egAnaTimestamps' = ILM.map (\x -> ILS.difference x deadClasses) (egAnaTimestamps eg)
+  in eg { egEquivFind = ef', egNodeAssoc = assoc', egClassMap = cm''', egHashCons = hc', egDeadClasses = ILS.empty, egAnaTimestamps = egAnaTimestamps' }
 
 egCompact :: (MonadState (EGraph d f) m, Foldable f) => m ()
 egCompact = modify' egCompactInc
