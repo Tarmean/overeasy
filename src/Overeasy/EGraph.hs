@@ -40,6 +40,7 @@ module Overeasy.EGraph
   , egAddFlatTerm
   , egAddAnalysis
   , egAddNodeSubId
+  , egGetAnalysis
   , egMerge
   , egMergeMany
   , egUnionGraphs
@@ -146,6 +147,11 @@ instance (MonadPlus m) => EAnalysisHook (StateT (EGraph d f) m) d f where
     eaHalt = mzero
 
  
+egGetAnalysis :: MonadState (EGraph d f) m => EClassId -> m d
+egGetAnalysis cid = do
+  cmap <- gets egClassMap
+  pure (eciData $ ILM.partialLookup cid cmap)
+
 
 
 rightRequiresUpdate :: EAnalysisMerge d => d -> d -> Bool

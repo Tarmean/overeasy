@@ -10,6 +10,7 @@ module Overeasy.EquivFind
   , efLeavesSize
   , efTotalSize
   , efNew
+  , efUnsafeNew
   , efMember
   , efRoots
   , efLeaves
@@ -54,6 +55,13 @@ data EquivFind x = EquivFind
   } deriving stock (Eq, Show, Generic)
     deriving anyclass (NFData)
 
+efUnsafeNew :: Coercible x Int => (IntLikeMap x (IntLikeSet x)) -> EquivFind x
+efUnsafeNew m = EquivFind m backMap
+  where
+    backMap = ILM.fromList $ do
+      (x, xs) <- ILM.toList m
+      x' <- ILS.toList xs
+      pure (x', x)
 efRootsSize :: EquivFind x -> Int
 efRootsSize = ILM.size . efFwd
 
