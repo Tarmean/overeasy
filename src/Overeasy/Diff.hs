@@ -1,6 +1,5 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Overeasy.Diff where
-import Data.Hashable (Hashable)
 import IntLike.Set (IntLikeSet)
 import qualified IntLike.Set as ILS
 import GHC.Generics (Generic)
@@ -11,11 +10,9 @@ import Overeasy.EGraph (EClassId(..), EGraph(..), Epoch(..), eciData, egMergeMan
 import Data.Coerce (Coercible, coerce)
 import GHC.Stack (HasCallStack)
 import Data.Maybe (fromMaybe)
-import qualified Data.Sequence as Seq
 import Control.Monad.Trans.State.Strict (runState, execStateT)
 import Control.Monad (forM_, guard)
 import Control.Applicative (empty)
-import Debug.Trace (traceM)
 
 
 
@@ -97,7 +94,6 @@ instance  (Diff d i, Lattice i, Lattice d, Eq i) => Diff (EGraph d f) (EDiff i) 
         diffAnalysis = ILM.fromList $ do
             ks <- ILM.elems newerAnalysis
             k <- ILS.toList (toCanonSet (egEquivFind new) ks)
-            traceM (show k)
             let newAna = lookupNewAnalysis k
                 oldAna = lookupOldAnalysis k
                 diffOut = diff oldAna newAna
@@ -109,7 +105,7 @@ instance  (Diff d i, Lattice i, Lattice d, Eq i) => Diff (EGraph d f) (EDiff i) 
         lookupOldAnalysis cls = maybe ltop eciData $ ILM.lookup (canonOld cls) (egClassMap base)
         canonNew x = efLookupRoot x (egEquivFind new)
         canonOld x = efLookupRoot x (egEquivFind base)
-instance (Show d, Show (f EClassId), Eq i, Lattice d, EAnalysis d f, DiffApply d i) => DiffApply (EGraph d f) (EDiff i) where
+instance (Eq i, Lattice d, EAnalysis d f, DiffApply d i) => DiffApply (EGraph d f) (EDiff i) where
     applyDiff (EDiff (Merges merges) (MapDiff analysis)) e = flip execStateT e $ do
         mapM_ egMergeMany (ILM.elems (efFwd merges))
         forM_ (ILM.toList analysis) $ \(k,v) -> do
