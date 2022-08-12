@@ -41,7 +41,7 @@ module Overeasy.EquivFind
 import Control.Applicative ((<|>))
 import Control.DeepSeq (NFData)
 import Control.Monad.State.Strict (State, state)
-import Data.Coerce (Coercible)
+import Data.Coerce (Coercible, coerce)
 import Data.Foldable (foldl')
 import Data.Maybe (fromJust, fromMaybe)
 import GHC.Generics (Generic)
@@ -49,6 +49,7 @@ import IntLike.Map (IntLikeMap)
 import qualified IntLike.Map as ILM
 import IntLike.Set (IntLikeSet)
 import qualified IntLike.Set as ILS
+import Debug.Trace (trace)
 
 -- private ctor
 data EquivFind x = EquivFind
@@ -125,13 +126,17 @@ efClosure xs ef = foldl' (\c x -> if ILS.member x c then c else ILS.union (efEqu
 efFindRootAll :: Coercible x Int => x -> EquivFind x -> x
 efFindRootAll x0 ef = go x0
   where
+    go x
+      | trace ("find root " <> show (coerce (x0, x) :: (Int,Int))) False = undefined
     go x =
       case ILM.lookup x (efBwdAll ef) of
         Nothing -> x
         Just x' -> go x'
 efLookupRootAll :: Coercible x Int => x -> EquivFind x -> Maybe x
 efLookupRootAll x ef = case ILM.lookup x (efBwdAll ef) of
-    Nothing -> Nothing
+    Nothing 
+      | ILM.member x (efFwd ef)  -> Just x
+      | otherwise -> Nothing
     Just x' -> Just (efFindRootAll x' ef)
 
 efFindRoot :: Coercible x Int => x -> EquivFind x -> Maybe x
