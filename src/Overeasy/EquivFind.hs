@@ -126,8 +126,6 @@ efClosure xs ef = foldl' (\c x -> if ILS.member x c then c else ILS.union (efEqu
 efFindRootAll :: Coercible x Int => x -> EquivFind x -> x
 efFindRootAll x0 ef = go x0
   where
-    go x
-      | trace ("find root " <> show (coerce (x0, x) :: (Int,Int))) False = undefined
     go x =
       case ILM.lookup x (efBwdAll ef) of
         Nothing -> x
