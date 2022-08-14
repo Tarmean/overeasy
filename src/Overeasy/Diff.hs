@@ -90,7 +90,7 @@ instance (Lattice d) => Lattice (EDiff d) where
 
 instance  (Diff d i, Lattice i, Eq i) => Diff (EGraph d f) (EDiff i) where
     diff base new 
-      | not $ ILS.null missingDirty = error ("missingDirty: " ++ show missingDirty ++ " maps: " ++ show smarty ++ " merged: " <> show deadClasses <> "\n\nold epoch" <>  show (egEpoch base) <> " new timestamps" <> show (egAnaTimestamps new))
+      | not $ ILS.null missingDirty = error ("missingDirty: " ++ show missingDirty ++ " maps: " ++ show smarty ++ " merged: " <> show deadClasses <> "\n\nold epoch" <>  show (egEpoch base) <> " new epoch " <> show (egEpoch new) <> " new timestamps" <> show (egAnaTimestamps new))
       | otherwise = EDiff merged (MapDiff diffAnalysis)
       where
         merged = diff (egEquivFind base) (egEquivFind new)
