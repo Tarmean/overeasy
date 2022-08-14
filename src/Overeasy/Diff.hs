@@ -18,7 +18,7 @@ import Data.Bifunctor (first)
 
 
 class Lattice d => Diff e d | e -> d where
-  diff :: e -> e -> d
+  diff :: HasCallStack => e -> e -> d
 class Diff e d => DiffApply e d where
   applyDiff :: d -> e -> Maybe e
 class Lattice d where
