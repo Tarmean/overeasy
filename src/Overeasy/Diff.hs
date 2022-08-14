@@ -27,7 +27,7 @@ class Lattice d where
   ltop :: d
 
 
-newtype Merges a = Merges (EquivFind a)
+newtype Merges a = Merges { getMerges :: EquivFind a}
     deriving (Eq, Show, Generic, Ord)
 
 instance Coercible a Int => Lattice (Merges a) where
@@ -89,10 +89,11 @@ instance (Lattice d) => Lattice (EDiff d) where
 
 
 instance  (Diff d i, Lattice i, Eq i) => Diff (EGraph d f) (EDiff i) where
-    diff base new = EDiff (diff (egEquivFind base) (egEquivFind new)) (MapDiff diffAnalysis)
+    diff base new = EDiff merged (MapDiff diffAnalysis)
       where
+        merged = diff (egEquivFind base) (egEquivFind new)
         diffAnalysis = ILM.fromList $ do
-            let ks = ILS.fromList (ILM.elems newerAnalysis)
+            let ks = ILS.fromList (ILM.elems newerAnalysis) `ILS.union`  deadClasses
             -- traceM ("diff ana" <> show ks)
             k <- ILS.toList  ks
             guard (ILM.member k (egClassMap base))
@@ -102,6 +103,7 @@ instance  (Diff d i, Lattice i, Eq i) => Diff (EGraph d f) (EDiff i) where
             -- traceM ("diff " <> show k <> " " <> show diffOut)
             guard $ diffOut /= ltop
             pure (k, diffOut)
+        deadClasses = mconcat (ILM.elems (efFwd (getMerges merged)))
         oldEpoch = egEpoch base
         (_, newerAnalysis) = ILM.split (oldEpoch) (egAnaTimestamps new)
         lookupNewAnalysis cls = eciData $ ILM.partialLookup (canonNew cls) (egClassMap new)
