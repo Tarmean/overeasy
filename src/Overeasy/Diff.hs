@@ -89,13 +89,14 @@ instance (Lattice d) => Lattice (EDiff d) where
 
 
 instance  (Diff d i, Lattice i, Eq i) => Diff (EGraph d f) (EDiff i) where
-    diff base new = EDiff merged (MapDiff diffAnalysis)
+    diff base new 
+      | not $ ILS.null missingDirty = error ("missingDirty: " ++ show missingDirty ++ " maps: " ++ show smarty ++ " merged: " <> show deadClasses <> "\n\nold epoch" <>  show (egEpoch base) <> " new timestamps" <> show (egAnaTimestamps new))
+      | otherwise = EDiff merged (MapDiff diffAnalysis)
       where
         merged = diff (egEquivFind base) (egEquivFind new)
+        missingDirty= ILS.difference (ILS.fromList (ILM.keys diffAnalysis)) smarty
+            
         diffAnalysis = ILM.fromList $ do
-            if (not $ ILS.null missingDirty ) then
-               error ("missingDirty: " ++ show missingDirty ++ " maps: " ++ show smarty ++ " merged: " <> show deadClasses <> "\n\nold epoch" <>  show (egEpoch base) <> " new timestamps" <> show (egAnaTimestamps new))
-               else pure ()
             let ks = ILM.keys (egClassMap base)
             -- traceM ("diff ana" <> show ks)
             k <-  ks
@@ -109,7 +110,6 @@ instance  (Diff d i, Lattice i, Eq i) => Diff (EGraph d f) (EDiff i) where
             pure (k, diffOut)
         smarty = ILS.fromList (ILM.elems newerAnalysis) `ILS.union`  deadClasses
         deadClasses = mconcat (ILM.elems (efFwd (getMerges merged)))
-        missingDirty = ILS.fromList (ILM.keys (egClassMap base)) `ILS.difference` smarty
         oldEpoch = egEpoch base
         (_, newerAnalysis) = ILM.split (oldEpoch) (egAnaTimestamps new)
         lookupNewAnalysis cls = eciData $ ILM.partialLookup (canonNew cls) (egClassMap new)
