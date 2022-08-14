@@ -255,8 +255,6 @@ data EGraph d f = EGraph
   } deriving stock (Generic)
 egGetEpoch :: MonadState (EGraph d f) m => m Epoch
 egGetEpoch = gets egEpoch
-egIncEpoch :: MonadState (EGraph d f) m => m ()
-egIncEpoch = modify' $ \s -> s { egEpoch = egEpoch s + 1 }
 
 bumpAnalysisEpoch :: MonadState (EGraph d f) m => EClassId -> m ()
 bumpAnalysisEpoch cid = do
@@ -699,7 +697,7 @@ egRebuild = loop mempty
        keepGoing <- gets egNeedsRebuild
        if keepGoing
        then loop (ILM.union o acc)
-       else egIncEpoch >> pure (ILM.union o acc)
+       else pure (ILM.union o acc)
 
 
 egCanCompact :: EGraph d f -> Bool

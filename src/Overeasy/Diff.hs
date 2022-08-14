@@ -96,18 +96,18 @@ instance  (Diff d i, Lattice i, Eq i) => Diff (EGraph d f) (EDiff i) where
             -- traceM ("diff ana" <> show ks)
             k <- ILS.toList  ks
             guard (ILM.member k (egClassMap base))
-            Just oldAna <- [lookupOldAnalysis k]
+            let oldAna = lookupOldAnalysis k
             let newAna = lookupNewAnalysis k
                 diffOut = diff oldAna newAna
             -- traceM ("diff " <> show k <> " " <> show diffOut)
             guard $ diffOut /= ltop
             pure (k, diffOut)
         oldEpoch = egEpoch base
-        (_, newerAnalysis) = ILM.split (oldEpoch-1) (egAnaTimestamps new)
+        (_, newerAnalysis) = ILM.split (oldEpoch) (egAnaTimestamps new)
         lookupNewAnalysis cls = eciData $ ILM.partialLookup (canonNew cls) (egClassMap new)
-        lookupOldAnalysis cls = fmap eciData $ ILM.lookup (canonOld cls) (egClassMap base)
+        lookupOldAnalysis cls = eciData $ ILM.partialLookup cls (egClassMap base)
         canonNew x = efFindRootAll x (egEquivFind new)
-        canonOld x = efFindRootAll x (egEquivFind base)
+        -- canonOld x = efFindRootAll x (egEquivFind base)
 instance (Eq i, EAnalysis d f, DiffApply d i) => DiffApply (EGraph d f) (EDiff i) where
     applyDiff (EDiff (Merges merges) (MapDiff analysis)) e = flip execStateT e $ do
         mapM_ egMergeMany (ILM.elems (efFwd merges))
