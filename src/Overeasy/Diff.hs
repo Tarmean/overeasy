@@ -93,9 +93,11 @@ instance  (Diff d i, Lattice i, Eq i) => Diff (EGraph d f) (EDiff i) where
       where
         merged = diff (egEquivFind base) (egEquivFind new)
         diffAnalysis = ILM.fromList $ do
-            let ks = ILS.fromList (ILM.elems newerAnalysis) `ILS.union`  deadClasses
+            -- let ks = ILS.fromList (ILM.elems newerAnalysis) `ILS.union`  deadClasses
+            let ks = ILM.keys (egClassMap base)
             -- traceM ("diff ana" <> show ks)
-            k <- ILS.toList  ks
+            k <-  ks
+            -- k <- ILS.toList  ks
             guard (ILM.member k (egClassMap base))
             let oldAna = lookupOldAnalysis k
             let newAna = lookupNewAnalysis k
