@@ -137,7 +137,7 @@ alignDiffs a b = go ILS.empty mempty [(k,v) | (k,vs) <-  ILM.toList a, v <- ILS.
 -- canonical class, including classes newer than base
 diffAnalysis :: DeltaAnalysis d => Base d f -> New d f -> IntLikeMap EClassId d
 diffAnalysis base new = ILM.fromList $ do
-    ks <- ILM.elems newerAnalysis
+    let ks = ILS.fromList (ILM.elems newerAnalysis)
     k <- ILS.toList (toCanonSet (egEquivFind new) ks)
     let newAna = lookupNewAnalysis k
         oldAna = lookupOldAnalysis k

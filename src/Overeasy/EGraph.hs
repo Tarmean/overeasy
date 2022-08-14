@@ -53,6 +53,7 @@ module Overeasy.EGraph
   , egAnaTimestamps
   ) where
 
+import GHC.Stack
 import Debug.Trace (traceM)
 import Control.DeepSeq (NFData)
 import Control.Monad (unless, forM_, MonadPlus(mzero), when)
@@ -249,7 +250,7 @@ data EGraph d f = EGraph
   , egHashCons :: !(IntLikeMap ENodeId EClassId)
   , egWorkList :: !WorkList
   , egAnaWorklist :: !AnalysisWorklist
-  , egAnaTimestamps :: !(IntLikeMap Epoch (IntLikeSet EClassId))
+  , egAnaTimestamps :: !(IntLikeMap Epoch  EClassId)
   , egEpoch :: Epoch
   } deriving stock (Generic)
 egGetEpoch :: MonadState (EGraph d f) m => m Epoch
@@ -260,10 +261,7 @@ egIncEpoch = modify' $ \s -> s { egEpoch = egEpoch s + 1 }
 bumpAnalysisEpoch :: MonadState (EGraph d f) m => EClassId -> m ()
 bumpAnalysisEpoch cid = do
   norm <- gets (efLookupRoot cid . egEquivFind)
-  modify' $ \s -> s { egAnaTimestamps = ILM.alter add (egEpoch s) (egAnaTimestamps s) }
-   where
-     add  Nothing = Just (ILS.singleton cid)
-     add (Just s) = Just (ILS.insert cid s)
+  modify' $ \s -> s { egAnaTimestamps = ILM.insert (egEpoch s) cid (egAnaTimestamps s), egEpoch = egEpoch s + 1 }
 
 deriving stock instance (Eq d, Eq (f EClassId)) => Eq (EGraph d f)
 deriving stock instance (Show d, Show (f EClassId)) => Show (EGraph d f)
@@ -653,7 +651,7 @@ egReanalyzeRound wl = do
         egAddAnalysis clazz o
         mapM_ (\x -> eHook1 clazz =<< egGetNode x) (ILS.toList reanaTerms)
         bumpAnalysisEpoch clazz
-egAddAnalysis :: forall d f m. (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f) => EClassId -> [d] -> m Bool
+egAddAnalysis :: forall d f m. (HasCallStack, EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f) => EClassId -> [d] -> m Bool
 egAddAnalysis anaClass newData = do
     classMap <- gets egClassMap
     let 

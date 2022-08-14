@@ -92,7 +92,7 @@ instance  (Diff d i, Lattice i, Eq i) => Diff (EGraph d f) (EDiff i) where
     diff base new = EDiff (diff (egEquivFind base) (egEquivFind new)) (MapDiff diffAnalysis)
       where
         diffAnalysis = ILM.fromList $ do
-            let ks = mconcat (ILM.elems newerAnalysis)
+            let ks = ILS.fromList (ILM.elems newerAnalysis)
             -- traceM ("diff ana" <> show ks)
             k <- ILS.toList  ks
             guard (ILM.member k (egClassMap base))
