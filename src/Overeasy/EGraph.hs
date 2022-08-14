@@ -106,8 +106,16 @@ newtype ENodeId = ENodeId { unENodeId :: Int }
 -- so we can catch weird merges and so on
 class EAnalysisMerge d => EAnalysis d f where
   eaMake :: f d -> d
+  -- hook after class was updated
   eHook :: EAnalysisHook m d f => EClassId -> m ()
   eHook _ = pure ()
+  -- hook after children of node changed
+  -- used for propagators, alldifferent(a,b,c), a changes => propagatoe to b,c
+  -- does NOT RUN if class changes, have to call for all children in eHook if thats wanted
+  eHook1 :: EAnalysisHook m d f => EClassId -> f EClassId -> m ()
+  eHook1 _ _ = pure ()
+  alwaysHook :: proxy d f -> Bool
+  alwaysHook _ = False
 class EAnalysisMerge d where
   eaJoin :: d -> [d] -> d
   eaWhat :: d -> d -> EAnalysisChange
@@ -130,10 +138,16 @@ class Monad m => EAnalysisHook m d f | m -> d f where
     eaRefineAnalysis :: (EAnalysis d f)  => EClassId -> d -> m ()
     eaMerge :: EClassId -> EClassId -> m ()
     eaHalt :: m ()
+    eaClassTerms :: (Hashable (f EClassId)) => EClassId -> m [f EClassId]
 instance (MonadPlus m) => EAnalysisHook (StateT (EGraph d f) m) d f where
     eaClassData cid = do
       cmap <- gets egClassMap
       pure (eciData $ ILM.partialLookup cid cmap)
+    eaClassTerms cid = do
+      cmap <- gets egClassMap
+      let nodes = (eciNodes $ ILM.partialLookup cid cmap)
+      nodeTerms <- gets egNodeAssoc
+      pure [assocPartialLookupByKey nid nodeTerms | nid <- ILS.toList nodes]
     eaAddTerm tid = do
        (_, trip) <- egAddNodeSubId tid
        pure (entClass trip)
@@ -144,6 +158,7 @@ instance (MonadPlus m) => EAnalysisHook (StateT (EGraph d f) m) d f where
          Nothing -> error "eaMerge: merge failed"
     eaRefineAnalysis tid d = do
        egAddAnalysis tid [d]
+       pure ()
     eaHalt = mzero
 
  
@@ -328,8 +343,7 @@ egAddNodeSub fcd = do
       eci <- gets (ILM.partialLookup x . egClassMap)
       let d = eciData eci
       pure (ChangedNo, ENodeTriple n x d)
-    Nothing -> postAddNodeHook $ state $ \eg ->
-      -- FIXME: should this run eHook?
+    Nothing -> postAddNodeHook (fmap entClass fcd) $ state $ \eg ->
       -- node does not exist; get new node and class ids
       let (n, nodeSource') = sourceAddInc (egNodeSource eg)
           (x, classSource') = sourceAddInc (egClassSource eg)
@@ -346,12 +360,13 @@ egAddNodeSub fcd = do
           eg' = eg { egNodeSource = nodeSource', egClassSource = classSource', egEquivFind = ef', egNodeAssoc = assoc', egHashCons = hc', egClassMap = classMap' }
       in ((ChangedYes, ENodeTriple n x d), eg')
 
-postAddNodeHook :: (MonadState (EGraph d f) m, EAnalysisHook m d f, EAnalysis d f) => m (Changed, ENodeTriple d) -> m (Changed, ENodeTriple d)
-postAddNodeHook m = do
+postAddNodeHook :: forall f d m. (MonadState (EGraph d f) m, EAnalysisHook m d f, EAnalysis d f) => f EClassId -> m (Changed, ENodeTriple d) -> m (Changed, ENodeTriple d)
+postAddNodeHook def m = do
      (c, nt) <- m
-     if c == ChangedYes
+     if alwaysHook (undefined :: proxy d f) || c == ChangedYes 
        then do
          eHook (entClass nt)
+         eHook1 (entClass nt) def
          bumpAnalysisEpoch (entClass nt)
          pure (c, nt)
        else pure (c, nt)
@@ -367,7 +382,7 @@ egAddNodeSubId fc = do
       eci <- gets (ILM.partialLookup x . egClassMap)
       let d = eciData eci
       pure (ChangedNo, ENodeTriple n x d)
-    Nothing -> postAddNodeHook $ state $ \eg ->
+    Nothing -> postAddNodeHook fc $ state $ \eg ->
       -- node does not exist; get new node and class ids
       let (n, nodeSource') = sourceAddInc (egNodeSource eg)
           (x, classSource') = sourceAddInc (egClassSource eg)
@@ -579,24 +594,6 @@ egRebuildClassSingle baseCm newClass oldClasses =
       finalParents = ILS.difference candParents finalNodes
       finalInfo = EClassInfo finalData finalNodes finalParents
       shouldRerunHook = if not (ILS.null classToReanalyze) then ILS.singleton newClass else ILS.empty
-      -- FIXME FIXME FIXME FIXME
-      -- FIXME FIXME FIXME FIXME
-      -- FIXME FIXME FIXME FIXME
-      -- FIXME FIXME FIXME FIXME
-      -- FIXME FIXME FIXME FIXME
-      -- FIXME FIXME FIXME FIXME
-      -- FIXME FIXME FIXME FIXME
-      -- FIXME FIXME FIXME FIXME
-      -- FIXME FIXME FIXME FIXME
-      -- FIXME FIXME FIXME FIXME
-      -- FIXME FIXME FIXME FIXME
-      -- FIXME FIXME FIXME FIXME
-      -- FIXME FIXME FIXME FIXME
-      -- FIXME FIXME FIXME FIXME
-      -- FIXME FIXME FIXME FIXME
-      -- FIXME FIXME FIXME FIXME
-      -- FIXME FIXME FIXME FIXME
-      -- eHook should be called here iff analysis outdates old one
   in tell (nodesToReanalyze, shouldRerunHook) *> pure finalInfo
 
 -- private
@@ -643,6 +640,10 @@ egReanalyzeRounds = do
     egReanalyzeRound wl
     egReanalyzeRounds
 
+egGetNode :: MonadState (EGraph d f) m => ENodeId -> m (f EClassId)
+egGetNode k = do
+  assoc <- gets egNodeAssoc
+  pure (assocPartialLookupByKey k assoc)
 egReanalyzeRound :: (EAnalysisHook m d f, MonadState (EGraph d f) m, Functor f, EAnalysis d f) =>  AnalysisWorklist -> m ()
 egReanalyzeRound wl = do
     origHc <- gets egHashCons
@@ -650,9 +651,9 @@ egReanalyzeRound wl = do
     forM_ (ILM.toList classReana) $ \(clazz, reanaTerms) -> do
         o <- mapM (egAnalyzeTerm) (ILS.toList reanaTerms)
         egAddAnalysis clazz o
-        eHook clazz
+        mapM_ (\x -> eHook1 clazz =<< egGetNode x) (ILS.toList reanaTerms)
         bumpAnalysisEpoch clazz
-egAddAnalysis :: (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f) => EClassId -> [d] -> m ()
+egAddAnalysis :: forall d f m. (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f) => EClassId -> [d] -> m Bool
 egAddAnalysis anaClass newData = do
     classMap <- gets egClassMap
     let 
@@ -665,7 +666,8 @@ egAddAnalysis anaClass newData = do
 
       classData' = classData { eciData = joined }
     modify' (\eg -> eg { egClassMap = ILM.insert anaClass classData' (egClassMap eg), egAnaWorklist = addNewDirty (egAnaWorklist eg) })
-    when isDirty (eHook anaClass *> bumpAnalysisEpoch anaClass)
+    when (alwaysHook (undefined :: proxy d f) || isDirty) (eHook anaClass *> bumpAnalysisEpoch anaClass)
+    pure isDirty
 
 -- | Rebuilds the 'EGraph' after merging to allow adding more terms. (Always safe to call.)
 egRebuild1 :: (EAnalysisHook m d f, MonadState (EGraph d f) m, EAnalysis d f, Traversable f, Hashable (f EClassId)) => m (IntLikeMultiMap EClassId EClassId)
@@ -870,7 +872,7 @@ egIntersectGraphs left0 right0 = evalStateT (execStateT (goConstructors *> goOut
               let d1 = lookupData1 class1
                   d2 = lookupData2 class2
                   meet = eaMeet d1 d2
-              inEgg (egAddAnalysis classMid [meet])
+              inEgg (() <$ egAddAnalysis classMid [meet])
     setRight :: EClassOut -> EClassRight -> WriterT Changed (MIntersect f d) ()
     setRight classMid class2 = lift $ lift $ modify' $ over2 $ ILM.insert classMid class2
     over1 f (a,b,c) = (f a, b,c)
