@@ -33,6 +33,7 @@ module Overeasy.EGraph
   , egFindNode
   , egFindTerm
   , egClassInfo
+  , egAnaWorklist
   , egNew
   , egClasses
   , egCanonicalize
@@ -158,10 +159,11 @@ instance (MonadPlus m) => EAnalysisHook (StateT (EGraph d f) m) d f where
          Just _ -> pure ()
          Nothing -> error "eaMerge: merge failed"
     eaRefineAnalysis tid d = do
-       egAddAnalysis tid [d]
+       _ <- egAddAnalysis tid [d]
        pure ()
     eaHalt = mzero
 
+    
  
 egGetAnalysis :: MonadState (EGraph d f) m => EClassId -> m d
 egGetAnalysis cid = do
