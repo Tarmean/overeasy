@@ -49,7 +49,7 @@ instance (Coercible a Int) => Diff (EquivFind a) (Merges a) where
     diff efA efB = Merges $ efUnsafeNew out
       where
         removedRoots = ILM.difference (efFwd efA) (efFwd efB)
-        out = ILM.fromListWith (<>) [(y, ILS.singleton x) | x <- ILM.keys removedRoots, let y = efFindRootAll x efB]
+        out = ILM.fromListWith (<>) [(y, ILS.singleton x) | x <- ILM.keys removedRoots, Just y <- [efLookupRootAll x efB]]
 
 data MapDiff k d = MapDiff {
   mapDiff :: !(IntLikeMap k d)
