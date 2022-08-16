@@ -7,9 +7,8 @@ import Overeasy.EquivFind
 import qualified IntLike.Map as ILM
 import IntLike.Map (IntLikeMap)
 import Overeasy.EGraph (EClassId(..), EGraph(..), Epoch(..), eciData, egMergeMany, egAddAnalysis, egGetAnalysis, EAnalysis)
-import Data.Coerce (Coercible, coerce)
+import Data.Coerce (Coercible)
 import GHC.Stack (HasCallStack)
-import Data.Maybe (fromMaybe)
 import Control.Monad.Trans.State.Strict (runState, execStateT, gets)
 import Control.Monad (forM_, guard)
 import Control.Applicative (empty)
@@ -74,24 +73,25 @@ instance Coercible Int k => SemiDirectProduct (Merges k) (MapDiff k d) where
 
 
 data EDiff d = EDiff {
+    eEpoch :: Epoch,
     eMerges :: Merges EClassId,
     eAna :: MapDiff EClassId d
   } deriving (Eq, Show, Generic, Ord)
 
 instance (Lattice d) => Lattice (EDiff d) where
-    lintersect (EDiff la lb ) (EDiff ra rb) = case (lintersect la ra , lintersect lb rb) of
-        (Just a, Just b) -> Just $ EDiff a b --(applyProduct a b)
-        (Nothing, Just b) -> Just $ EDiff ltop b
-        (Just a, Nothing) -> Just $ EDiff a ltop
+    lintersect (EDiff  ep1 la lb) (EDiff  ep2 ra rb) = case (lintersect la ra , lintersect lb rb) of
+        (Just a, Just b) -> Just $ EDiff (max ep1 ep2) a b --(applyProduct a b)
+        (Nothing, Just b) -> Just $ EDiff (max ep1 ep2)ltop b 
+        (Just a, Nothing) -> Just $ EDiff (max ep1 ep2)a ltop 
         _ -> Nothing
-    lunion (EDiff la lb) (EDiff ra rb) = EDiff <$> lunion la ra <*> lunion lb rb
-    ltop = EDiff ltop ltop
+    lunion (EDiff ep1 la lb) (EDiff ep2 ra rb) = EDiff (max ep1 ep2) <$> lunion la ra <*> lunion lb rb
+    ltop = EDiff (Epoch 0) ltop ltop 
 
 
 instance  (Diff d i, Lattice i, Eq i) => Diff (EGraph d f) (EDiff i) where
     diff base new 
       -- | not $ ILS.null missingDirty = error ("missingDirty: " ++ show missingDirty ++ " maps: " ++ show smarty ++ " merged: " <> show deadClasses <> "\n\nold epoch" <>  show (egEpoch base) <> " new epoch " <> show (egEpoch new) <> " new timestamps" <> show (egAnaTimestamps new))
-      | otherwise = EDiff merged (MapDiff diffAnalysis)
+      | otherwise = EDiff (max (egEpoch base) (egEpoch new)) merged (MapDiff diffAnalysis)
       where
         merged = diff (egEquivFind base) (egEquivFind new)
         -- missingDirty= ILS.difference (ILS.fromList (ILM.keys diffAnalysis)) smarty
@@ -117,7 +117,7 @@ instance  (Diff d i, Lattice i, Eq i) => Diff (EGraph d f) (EDiff i) where
         canonNew x = efFindRootAll x (egEquivFind new)
         -- canonOld x = efFindRootAll x (egEquivFind base)
 instance (Eq i, EAnalysis d f, DiffApply d i) => DiffApply (EGraph d f) (EDiff i) where
-    applyDiff (EDiff (Merges merges) (MapDiff analysis)) e = flip execStateT e $ do
+    applyDiff (EDiff ep (Merges merges) (MapDiff analysis)) e = flip execStateT (upEpoch e) $ do
         mapM_ egMergeMany (ILM.elems (efFwd merges))
         ef <- gets egEquivFind
         let
@@ -129,9 +129,8 @@ instance (Eq i, EAnalysis d f, DiffApply d i) => DiffApply (EGraph d f) (EDiff i
             case new of
               Nothing -> empty
               Just n -> egAddAnalysis k [n]
+     where
+       upEpoch eg = eg { egEpoch = max (egEpoch eg) ep }
 
 toCanonSet :: (Coercible a Int) => EquivFind a -> IntLikeSet a -> IntLikeSet a
 toCanonSet ef eqs = ILS.map (\i -> efFindRootAll i ef) eqs
-
-
-
