@@ -119,6 +119,7 @@ instance  (Diff d i, Lattice i, Eq i) => Diff (EGraph d f) (EDiff i) where
         deadClasses = mconcat (ILM.elems (efFwd (getMerges merged)))
         oldEpoch = egEpoch base
         (_, newerAnalysis) = ILM.split (oldEpoch) (egAnaTimestamps new)
+        lookupNewAnalysis :: HasCallStack => EClassId -> d
         lookupNewAnalysis cls = eciData $ ILM.partialLookup (canonNew cls) (egClassMap new)
         lookupOldAnalysis cls = fmap eciData $ ILM.lookup cls (egClassMap base)
         canonNew x = efFindRootAll x (egEquivFind new)
