@@ -100,10 +100,10 @@ instance  (Diff d i, Lattice i, Eq i) => Diff (EGraph d f) (EDiff i) where
             let ks = ILS.toList smarty
             -- traceM ("diff ana" <> show ks)
             k <-  ks
-            -- k <- ILS.toList  ks
             guard (ILM.member k (egClassMap base))
+            -- fixme: how does this happen!???
+            newAna <- maybe empty pure (lookupNewAnalysis k)
             let oldAna = lookupOldAnalysis k
-            let newAna = lookupNewAnalysis k
                 diffOut = diff oldAna newAna
             -- traceM ("diff " <> show k <> " " <> show diffOut)
             guard $ diffOut /= ltop
@@ -112,7 +112,7 @@ instance  (Diff d i, Lattice i, Eq i) => Diff (EGraph d f) (EDiff i) where
         deadClasses = mconcat (ILM.elems (efFwd (getMerges merged)))
         oldEpoch = egEpoch base
         (_, newerAnalysis) = ILM.split (oldEpoch) (egAnaTimestamps new)
-        lookupNewAnalysis cls = eciData $ ILM.partialLookup (canonNew cls) (egClassMap new)
+        lookupNewAnalysis cls = fmap eciData $ ILM.lookup (canonNew cls) (egClassMap new)
         lookupOldAnalysis cls = eciData $ ILM.partialLookup cls (egClassMap base)
         canonNew x = efFindRootAll x (egEquivFind new)
         -- canonOld x = efFindRootAll x (egEquivFind base)
